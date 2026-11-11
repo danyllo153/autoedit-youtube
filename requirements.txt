@@ -1,4 +1,6 @@
 scenedetect[opencv]
 faster-whisper
+# av 17+ quebrou o faster-whisper (open() sem metadata_errors)
+av<17
 pillow
 numpy
