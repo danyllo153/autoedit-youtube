@@ -95,6 +95,25 @@ python scripts\watch_video.py meu_video.mp4 --frames 30 --no-transcribe     # ar
 
 O download de links do YouTube não funciona a partir de servidores na nuvem (bloqueio anti-robô); rode no seu PC.
 
+### Fila de vídeos (pedir de qualquer aparelho)
+`scripts/watch_fila.py` fica rodando num PC seu que fica ligado e vigia `Documentos\Autoedit\fila` no OneDrive.
+Cada `.txt` com um link que cair ali vira um dossiê em `Autoedit\dossie_<id>`. O Claude grava o `.txt` para você
+quando você cola o link no chat (pelo celular, notebook, onde estiver) e depois lê o dossiê.
+```powershell
+python scripts\watch_fila.py                 # deixa rodando (Ctrl+C para parar)
+python scripts\watch_fila.py --once          # processa o que houver e sai
+```
+Para iniciar junto com o Windows (rode dentro da pasta do repositório; `pythonw` não abre janela):
+```powershell
+$py = (Get-Command pythonw).Source
+schtasks /Create /TN "AutoeditFila" /SC ONLOGON /TR "`"$py`" `"$PWD\scripts\watch_fila.py`"" /F
+# remover depois:  schtasks /Delete /TN "AutoeditFila" /F
+```
+Formato do `.txt` (uma entrada por linha): o link, ou o nome de um vídeo já presente em `Autoedit`, mais `lang=pt`,
+`frames=30` e `navegador=chrome` (opcionais). Resultados: `fila\feitos\` (ok), `fila\erros\` (com o motivo) e
+`fila\_status.log` (mostra se o vigia está vivo). Aceita as mesmas opções de `watch_video.py` (`--whisper-model`...),
+mais `--intervalo S` (padrão 30). O PC precisa estar ligado e sem suspender; senão o pedido espera na fila.
+
 ## Limitações conhecidas
 - A nota dos trechos usa só áudio + movimento; não "entende" o jogo (kills, vitória).
 - Legendas dependem do modelo Whisper (`--whisper-model small` por padrão; `medium` é mais preciso).
