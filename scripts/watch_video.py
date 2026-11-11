@@ -170,12 +170,17 @@ def transcribe(video, pasta, modelo, lang):
         from faster_whisper import WhisperModel
     except ImportError:
         return None, "faster-whisper não instalado (pip install faster-whisper)"
-    try:
-        m = WhisperModel(modelo, device="auto", compute_type="int8")
-        segs, info = m.transcribe(str(video), language=lang or None, vad_filter=True)
-        linhas = [(s.start, s.end, s.text.strip()) for s in segs if s.text.strip()]
-    except Exception as e:  # ex.: sem internet para baixar o modelo
-        return None, f"Whisper falhou: {e}"
+    erro = None
+    for device in ("auto", "cpu"):  # "auto" tenta a GPU; sem as DLLs CUDA (cublas) cai para a CPU
+        try:
+            m = WhisperModel(modelo, device=device, compute_type="int8")
+            segs, info = m.transcribe(str(video), language=lang or None, vad_filter=True)
+            linhas = [(s.start, s.end, s.text.strip()) for s in segs if s.text.strip()]
+            break
+        except Exception as e:  # ex.: sem CUDA (tenta CPU) ou sem internet para baixar o modelo
+            erro = e
+    else:
+        return None, f"Whisper falhou: {erro}"
     return linhas, f"Whisper '{modelo}' (idioma: {info.language})"
 
 

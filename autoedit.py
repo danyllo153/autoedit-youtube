@@ -221,13 +221,20 @@ def concat(names, out, cwd):
 def transcribe(video, model_name, lang):
     from faster_whisper import WhisperModel
     print("  transcrevendo (Whisper)...")
-    model = WhisperModel(model_name, device="auto", compute_type="int8")
-    segs, info = model.transcribe(str(video), language=lang, vad_filter=True, beam_size=5)
-    out = []
-    for s in segs:
-        if s.no_speech_prob > 0.6 or s.avg_logprob < -1.2 or not s.text.strip():
-            continue
-        out.append((s.start, s.end, s.text.strip()))
+    for device in ("auto", "cpu"):  # "auto" tenta a GPU; sem as DLLs CUDA (cublas) cai para a CPU
+        try:
+            model = WhisperModel(model_name, device=device, compute_type="int8")
+            segs, info = model.transcribe(str(video), language=lang, vad_filter=True, beam_size=5)
+            out = []
+            for s in segs:  # o erro de CUDA só aparece aqui, ao consumir o gerador
+                if s.no_speech_prob > 0.6 or s.avg_logprob < -1.2 or not s.text.strip():
+                    continue
+                out.append((s.start, s.end, s.text.strip()))
+            break
+        except Exception as e:
+            if device == "cpu":
+                raise
+            print(f"  GPU indisponível para o Whisper ({e}); usando a CPU...")
     print(f"  {len(out)} falas detectadas (idioma: {info.language})")
     return out
 
