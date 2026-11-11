@@ -39,6 +39,9 @@ Saída (pasta `autoedit_out/`): `*_final.mp4`, `*_miniatura.jpg` (só vídeo gra
 | `--extras auto/on/off` | intro + miniatura (auto = só se final >= `--long-min`, padrão 180 s) |
 | `--intro-video ARQ` | usa sua intro em vez da gerada |
 | `--shorts` | gera versão vertical 9:16 de até 58 s |
+| `--shorts-only` | gera só o Short vertical |
+| `--short-crop square` | Short: recorta o centro 1:1 (gameplay maior; perde bordas/HUD) |
+| `--min-motion X` | descarta trechos parados (menus/inventário) abaixo de X × mediana de movimento (padrão 0.5) |
 | `--gpu` | exporta com NVENC (placa NVIDIA) |
 
 ## Como escolhe os trechos

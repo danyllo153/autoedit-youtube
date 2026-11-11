@@ -58,12 +58,14 @@ def video_encoder(gpu):
     return ["-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-pix_fmt", "yuv420p"]
 
 
-def fit_graph(w, h):
-    """Encaixa qualquer vídeo/foto em w x h com fundo desfocado (sem barras pretas)."""
+def fit_graph(w, h, square=False):
+    """Encaixa qualquer vídeo/foto em w x h com fundo desfocado (sem barras pretas).
+    square=True: recorta o centro em 1:1 antes de encaixar (gameplay maior no Short)."""
     sw, sh = (w // 16) * 2, (h // 16) * 2
+    fg_crop = "crop='min(iw,ih)':'min(iw,ih)'," if square else ""
     return (f"split[a][b];[a]scale={sw}:{sh}:force_original_aspect_ratio=increase,"
             f"crop={sw}:{sh},boxblur=3:2,scale={w}:{h}[bg];"
-            f"[b]scale={w}:{h}:force_original_aspect_ratio=decrease[fg];"
+            f"[b]{fg_crop}scale={w}:{h}:force_original_aspect_ratio=decrease[fg];"
             f"[bg][fg]overlay=(W-w)/2:(H-h)/2")
 
 
@@ -155,7 +157,7 @@ def score_video(path, args):
     return dur, has_audio, chunks, np.array(a_sc), np.array(m_sc)
 
 
-def select_clips(items, target, aw):
+def select_clips(items, target, aw, min_motion=0.5):
     """items: lista de dicts (src, s, e, a, m). Retorna os melhores até 'target' s."""
     a_all = percentile_rank([i["a"] for i in items])
     m_all = percentile_rank([i["m"] for i in items])
@@ -163,8 +165,15 @@ def select_clips(items, target, aw):
         aw = 0.0  # sem áudio útil: só movimento
     for i, (a, m) in zip(items, zip(a_all, m_all)):
         i["score"] = float(aw * a + (1 - aw) * m)
+    # descarta trechos quase parados (menus, inventário, tela de loading), se sobrar material
+    pool = items
+    ms = np.array([i["m"] for i in items])
+    if min_motion > 0 and np.ptp(ms) > 1e-9:
+        keep = [i for i in items if i["m"] >= min_motion * float(np.median(ms))]
+        if sum(i["e"] - i["s"] for i in keep) >= target:
+            pool = keep
     chosen, total = [], 0.0
-    for it in sorted(items, key=lambda i: -i["score"]):
+    for it in sorted(pool, key=lambda i: -i["score"]):
         d = it["e"] - it["s"]
         if total + d > target * 1.05:
             continue
@@ -177,9 +186,9 @@ def select_clips(items, target, aw):
 
 
 # ----------------------------------------------------------------- renderização
-def render_clip(src, s, e, out, has_audio, enc, w, h, cwd):
+def render_clip(src, s, e, out, has_audio, enc, w, h, cwd, square=False):
     d = e - s
-    vf = fit_graph(w, h) + f",fps={FPS},setsar=1,format=yuv420p"
+    vf = fit_graph(w, h, square) + f",fps={FPS},setsar=1,format=yuv420p"
     cmd = ["ffmpeg", "-y", "-v", "error", "-ss", f"{s:.3f}", "-t", f"{d:.3f}", "-i", src]
     if has_audio:
         af = (f"aresample=48000,afade=t=in:d=0.04,"
@@ -364,7 +373,8 @@ def produce(clips, out, tmp, args, w, h, *, vertical=False, allow_extras=True, t
         if c.get("photo"):
             render_photo(c["photo"], name, args.photo_secs, enc, w, h, work)
         else:
-            render_clip(str(c["src"]), c["s"], c["e"], name, c["has_audio"], enc, w, h, work)
+            render_clip(str(c["src"]), c["s"], c["e"], name, c["has_audio"], enc, w, h, work,
+                        square=vertical and args.short_crop == "square")
         names.append(name)
     concat(names, "cut.mp4", work)
     cut_dur, _ = probe(work / "cut.mp4")
@@ -442,6 +452,11 @@ def main():
     ap.add_argument("--long-min", type=float, default=180, help="segundos p/ considerar 'grande'")
     ap.add_argument("--intro-video", help="sua própria intro (usa no lugar da gerada)")
     ap.add_argument("--shorts", action="store_true", help="gera também versão vertical (<=58 s)")
+    ap.add_argument("--short-crop", choices=["none", "square"], default="none",
+                    help="Short: 'square' recorta o centro 1:1 (gameplay maior, perde as bordas/HUD)")
+    ap.add_argument("--min-motion", type=float, default=0.5,
+                    help="descarta trechos com movimento < X * mediana (menus/inventário). 0 desliga")
+    ap.add_argument("--shorts-only", action="store_true", help="gera só o Short vertical")
     ap.add_argument("--photo-secs", type=float, default=3.5)
     ap.add_argument("--gpu", action="store_true", help="usar NVENC (placa NVIDIA)")
     ap.add_argument("--font", help="arquivo .ttf para títulos")
@@ -500,7 +515,7 @@ def main():
             if not items:
                 sys.exit("Nenhum trecho encontrado (vídeo muito curto?).")
             target = args.target or min(max(total_dur * 0.25, 30), 600)
-            clips, got = select_clips(items, target, args.audio_weight)
+            clips, got = select_clips(items, target, args.audio_weight, args.min_motion)
             print(f"→ {len(clips)} trechos escolhidos, {got:.0f}s (alvo {target:.0f}s)")
             plan = [{"src": Path(c["src"]).name, "start": round(c["s"], 2),
                      "end": round(c["e"], 2), "score": round(c["score"], 3)} for c in clips]
@@ -511,17 +526,18 @@ def main():
 
         W, H = 1920, 1080
         out_main = out_dir / f"{stem}_final.mp4"
-        print("• montando vídeo principal...")
-        thumb, total, is_long = produce(clips, out_main, tmp, args, W, H, title=title)
-        if thumb is not None:
-            make_thumbnail(thumb, title, out_dir / f"{stem}_miniatura.jpg", args.font)
-            print("  miniatura + intro adicionadas (vídeo grande)")
-        elif not args.photos_mode and args.extras == "auto" and not is_long:
-            print(f"  vídeo curto ({total:.0f}s < {args.long_min:.0f}s): sem intro/miniatura")
+        if not args.shorts_only:
+            print("• montando vídeo principal...")
+            thumb, total, is_long = produce(clips, out_main, tmp, args, W, H, title=title)
+            if thumb is not None:
+                make_thumbnail(thumb, title, out_dir / f"{stem}_miniatura.jpg", args.font)
+                print("  miniatura + intro adicionadas (vídeo grande)")
+            elif not args.photos_mode and args.extras == "auto" and not is_long:
+                print(f"  vídeo curto ({total:.0f}s < {args.long_min:.0f}s): sem intro/miniatura")
 
-        if args.shorts and not args.photos_mode:
+        if (args.shorts or args.shorts_only) and not args.photos_mode:
             print("• montando Shorts vertical...")
-            sh, _ = select_clips(items, 58, args.audio_weight)
+            sh, _ = select_clips(items, 55, args.audio_weight, args.min_motion)
             produce(sh, out_dir / f"{stem}_shorts.mp4", tmp, args, 1080, 1920,
                     vertical=True, allow_extras=False, title=title)
         print(f"\n✔ pronto! Arquivos em: {out_dir.resolve()}")
