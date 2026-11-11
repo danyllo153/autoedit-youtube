@@ -73,7 +73,30 @@ No Windows, o script `scripts/baixar_video.ps1` faz o download com o `yt-dlp` (`
 Se der erro de política de execução, rode antes: `Set-ExecutionPolicy -Scope Process Bypass`.
 Use só com vídeos seus ou que você tenha direito de usar.
 
+## Aprender com um vídeo (skill `watch`)
+`scripts/watch_video.py` "assiste" um vídeo e gera um **dossiê** (`dossie_<id>/dossie.md` com transcrição e horários,
+`quadros/*.jpg` e `folha_NN.jpg` com miniaturas) que o Claude lê para extrair funcionalidades. A skill
+`.claude/skills/watch` descreve o fluxo: cole o link no chat, rode o comando que ele devolver no seu PC e o dossiê
+cai em `Documentos\Autoedit` (OneDrive).
+```powershell
+winget install yt-dlp.yt-dlp Gyan.FFmpeg DenoLand.Deno
+python scripts\watch_video.py "https://youtu.be/ID_DO_VIDEO" --lang pt
+python scripts\watch_video.py meu_video.mp4 --frames 30 --no-transcribe     # arquivo local, sem Whisper
+```
+| Opção | O que faz |
+|---|---|
+| `--out PASTA` | onde gravar (padrão: `Documentos\Autoedit` do OneDrive, senão `autoedit_out/watch`) |
+| `--frames N` | máximo de quadros-chave (padrão 24; mistura mudanças de cena + amostragem uniforme) |
+| `--scene-threshold X` | sensibilidade de mudança de cena, 0-1 (padrão 0.25) |
+| `--altura H` | altura máxima ao baixar (padrão 720) |
+| `--navegador chrome` | usa o login do navegador se o YouTube pedir "confirmar que não é robô" |
+| `--whisper-model M` / `--lang L` | modelo (padrão `small`) e idioma da transcrição |
+| `--no-transcribe` | pula o Whisper (usa a legenda do site, se houver) |
+
+O download de links do YouTube não funciona a partir de servidores na nuvem (bloqueio anti-robô); rode no seu PC.
+
 ## Limitações conhecidas
 - A nota dos trechos usa só áudio + movimento; não "entende" o jogo (kills, vitória).
 - Legendas dependem do modelo Whisper (`--whisper-model small` por padrão; `medium` é mais preciso).
+- `watch` vê só a transcrição e quadros espaçados, não o vídeo inteiro.
 - Fotos viram slideshow com cortes secos (sem transição).
