@@ -28,8 +28,12 @@ from PIL import Image, ImageDraw
 VIDEO_EXT = {".mp4", ".mkv", ".mov", ".avi", ".webm", ".flv", ".m4v"}
 
 
+class Falha(Exception):
+    """Erro esperado (mostrado ao usuário sem traceback)."""
+
+
 def fail(msg):
-    sys.exit(f"\nERRO: {msg}")
+    raise Falha(msg)
 
 
 def run(cmd, check=True):
@@ -195,37 +199,31 @@ def write_srt(linhas, dest):
 
 
 # --------------------------------------------------------------------- main
-def main():
-    ap = argparse.ArgumentParser(description="Gera um dossiê (transcrição + quadros) de um vídeo.")
-    ap.add_argument("fonte", help="link do vídeo ou arquivo local")
-    ap.add_argument("--out", help="pasta de saída (padrão: Documentos\\Autoedit do OneDrive, se existir)")
-    ap.add_argument("--frames", type=int, default=24, help="máx. de quadros-chave (padrão 24)")
-    ap.add_argument("--scene-threshold", type=float, default=0.25, help="sensibilidade de mudança de cena (0-1)")
-    ap.add_argument("--altura", type=int, default=720, help="altura máx. ao baixar (padrão 720)")
-    ap.add_argument("--navegador", help="navegador com login do YouTube (chrome, edge, firefox...)")
-    ap.add_argument("--whisper-model", default="small", help="modelo Whisper (padrão small)")
-    ap.add_argument("--lang", help="idioma do áudio (pt, en...); padrão: detectar")
-    ap.add_argument("--no-transcribe", action="store_true", help="não transcreve (só quadros/legenda do site)")
-    a = ap.parse_args()
-
+def gerar_dossie(fonte, out=None, frames=24, scene_threshold=0.25, altura=720, navegador=None,
+                 whisper_model="small", lang=None, no_transcribe=False, log=print):
+    """Gera o dossiê de `fonte` (link ou arquivo) e devolve o caminho do dossie.md."""
     for exe in ("ffmpeg", "ffprobe"):
         if not shutil.which(exe):
             fail(f"{exe} não encontrado no PATH (winget install Gyan.FFmpeg).")
 
-    base = Path(a.out) if a.out else default_out()
-    eh_link = re.match(r"https?://", a.fonte) is not None
-    if eh_link:
-        pasta = base / f"dossie_{video_id(a.fonte)}"
+    base = Path(out) if out else default_out()
+    if re.match(r"https?://", fonte):
+        pasta = base / f"dossie_{video_id(fonte)}"
         pasta.mkdir(parents=True, exist_ok=True)
-        print(f"[1/4] Baixando para {pasta} ...")
-        video = download(a.fonte, pasta, a.altura, a.navegador)
+        log(f"[1/4] Baixando para {pasta} ...")
+        try:
+            video = download(fonte, pasta, altura, navegador)
+        except Falha:
+            if not any(pasta.iterdir()):  # não deixa pasta vazia de download que falhou
+                pasta.rmdir()
+            raise
     else:
-        video = Path(a.fonte)
+        video = Path(fonte)
         if not video.is_file() or video.suffix.lower() not in VIDEO_EXT:
             fail(f"arquivo de vídeo não encontrado: {video}")
         pasta = base / f"dossie_{video.stem}"
         pasta.mkdir(parents=True, exist_ok=True)
-        print("[1/4] Usando arquivo local.")
+        log("[1/4] Usando arquivo local.")
 
     dur, res = probe(video)
     info = {}
@@ -233,27 +231,27 @@ def main():
     if ij:
         info = json.loads(ij.read_text(encoding="utf-8"))
 
-    print(f"[2/4] Quadros-chave (duração {fmt_t(dur)}, {res}) ...")
-    tempos = pick_times(dur, max(1, a.frames), scene_times(video, a.scene_threshold))
+    log(f"[2/4] Quadros-chave (duração {fmt_t(dur)}, {res}) ...")
+    tempos = pick_times(dur, max(1, frames), scene_times(video, scene_threshold))
     quadros = extract_frames(video, tempos, pasta / "quadros")
     folhas = contact_sheets(quadros, pasta)
 
-    print("[3/4] Transcrição ...")
+    log("[3/4] Transcrição ...")
     linhas, fonte_txt = (None, "desligada (--no-transcribe)")
-    if not a.no_transcribe:
-        linhas, fonte_txt = transcribe(video, pasta, a.whisper_model, a.lang)
+    if not no_transcribe:
+        linhas, fonte_txt = transcribe(video, pasta, whisper_model, lang)
     if not linhas:  # plano B: legenda baixada do site
         srt = next(iter(sorted(pasta.glob("video*.srt"))), None)
         if srt:
             linhas, fonte_txt = read_srt(srt), f"legenda do site ({srt.name}); Whisper: {fonte_txt}"
     if linhas:
         write_srt(linhas, pasta / "transcricao.srt")
-    elif not a.no_transcribe and fonte_txt.startswith("Whisper '"):
+    elif not no_transcribe and fonte_txt.startswith("Whisper '"):
         fonte_txt += " - nenhuma fala detectada"
 
-    print("[4/4] Escrevendo dossie.md ...")
+    log("[4/4] Escrevendo dossie.md ...")
     md = [f"# Dossiê: {info.get('title') or video.stem}", "",
-          f"- Fonte: {a.fonte}", f"- Duração: {fmt_t(dur)} | Resolução: {res}",
+          f"- Fonte: {fonte}", f"- Duração: {fmt_t(dur)} | Resolução: {res}",
           f"- Canal: {info.get('uploader', '?')} | Publicado: {info.get('upload_date', '?')}",
           f"- Transcrição: {fonte_txt}", f"- Quadros: {len(quadros)} em {len(folhas)} folha(s)", ""]
     if info.get("chapters"):
@@ -265,9 +263,39 @@ def main():
     md += ["## Quadros-chave"] + [f"- {fmt_t(t)}  quadros/{f.name}" for t, f in quadros] + [""]
     md += ["## Transcrição"]
     md += [f"[{fmt_t(s)}] {t}" for s, _, t in linhas] if linhas else ["(sem transcrição disponível)"]
-    (pasta / "dossie.md").write_text("\n".join(md) + "\n", encoding="utf-8")
+    destino = pasta / "dossie.md"
+    destino.write_text("\n".join(md) + "\n", encoding="utf-8")
+    return destino
 
-    print(f"\nPronto: {pasta / 'dossie.md'}")
+
+def add_opcoes(ap):
+    """Opções compartilhadas com scripts/watch_fila.py."""
+    ap.add_argument("--out", help="pasta de saída (padrão: Documentos\\Autoedit do OneDrive, se existir)")
+    ap.add_argument("--frames", type=int, default=24, help="máx. de quadros-chave (padrão 24)")
+    ap.add_argument("--scene-threshold", type=float, default=0.25, help="sensibilidade de mudança de cena (0-1)")
+    ap.add_argument("--altura", type=int, default=720, help="altura máx. ao baixar (padrão 720)")
+    ap.add_argument("--navegador", help="navegador com login do YouTube (chrome, edge, firefox...)")
+    ap.add_argument("--whisper-model", default="small", help="modelo Whisper (padrão small)")
+    ap.add_argument("--lang", help="idioma do áudio (pt, en...); padrão: detectar")
+    ap.add_argument("--no-transcribe", action="store_true", help="não transcreve (só quadros/legenda do site)")
+
+
+def opcoes_dossie(a):
+    return dict(out=a.out, frames=a.frames, scene_threshold=a.scene_threshold, altura=a.altura,
+                navegador=a.navegador, whisper_model=a.whisper_model, lang=a.lang,
+                no_transcribe=a.no_transcribe)
+
+
+def main():
+    ap = argparse.ArgumentParser(description="Gera um dossiê (transcrição + quadros) de um vídeo.")
+    ap.add_argument("fonte", help="link do vídeo ou arquivo local")
+    add_opcoes(ap)
+    a = ap.parse_args()
+    try:
+        destino = gerar_dossie(a.fonte, **opcoes_dossie(a))
+    except Falha as e:
+        sys.exit(f"\nERRO: {e}")
+    print(f"\nPronto: {destino}")
 
 
 if __name__ == "__main__":
