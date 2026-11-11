@@ -1,0 +1,4 @@
+scenedetect[opencv]
+faster-whisper
+pillow
+numpy

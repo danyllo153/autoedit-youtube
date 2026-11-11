@@ -1,0 +1,7 @@
+__pycache__/
+*.pyc
+.venv/
+autoedit_out/
+.DS_Store
+# material de teste gerado localmente
+test_footage/
