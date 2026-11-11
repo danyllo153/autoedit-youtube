@@ -63,6 +63,16 @@ python autoedit.py test_footage/gameplay_test.mp4 --target 80 --music test_foota
 ## Baixar o seu vídeo do YouTube
 Vídeos próprios: YouTube Studio → Conteúdo → ⋮ → *Fazer download*. Ou use a gravação original (OBS, GeForce).
 
+No Windows, o script `scripts/baixar_video.ps1` faz o download com o `yt-dlp` (`winget install yt-dlp.yt-dlp Gyan.FFmpeg`):
+```powershell
+.\scripts\baixar_video.ps1 https://youtu.be/ID_DO_VIDEO                 # 720p em Documentos\Autoedit (OneDrive) ou Downloads
+.\scripts\baixar_video.ps1 https://youtu.be/ID_DO_VIDEO -Altura 480     # arquivo menor
+.\scripts\baixar_video.ps1 https://youtu.be/ID_DO_VIDEO -SoLegenda      # só a legenda (.srt)
+.\scripts\baixar_video.ps1 https://youtu.be/ID_DO_VIDEO -Navegador chrome   # se pedir "confirmar que não é robô"
+```
+Se der erro de política de execução, rode antes: `Set-ExecutionPolicy -Scope Process Bypass`.
+Use só com vídeos seus ou que você tenha direito de usar.
+
 ## Limitações conhecidas
 - A nota dos trechos usa só áudio + movimento; não "entende" o jogo (kills, vitória).
 - Legendas dependem do modelo Whisper (`--whisper-model small` por padrão; `medium` é mais preciso).
