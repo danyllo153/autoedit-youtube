@@ -202,8 +202,9 @@ def render_clip(src, s, e, out, has_audio, enc, w, h, cwd, square=False):
 
 def render_photo(img, out, secs, enc, w, h, cwd):
     n = int(secs * FPS)
+    # zoom com easing (smoothstep 3t²-2t³): começa e termina suave, em vez de linear
     vf = (fit_graph(w * 2, h * 2) +
-          f",zoompan=z='min(zoom+0.0007,1.1)':d={n}:x='iw/2-(iw/zoom/2)':"
+          f",zoompan=z='1+0.1*(3*pow(on/{n},2)-2*pow(on/{n},3))':d={n}:x='iw/2-(iw/zoom/2)':"
           f"y='ih/2-(ih/zoom/2)':s={w}x{h}:fps={FPS},setsar=1,format=yuv420p")
     run(["ffmpeg", "-y", "-v", "error", "-i", img, "-f", "lavfi", "-t", f"{secs}",
          "-i", "anullsrc=r=48000:cl=stereo", "-vf", vf, "-map", "0:v:0", "-map", "1:a:0"]
