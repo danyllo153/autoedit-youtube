@@ -48,6 +48,8 @@ Saída (pasta `autoedit_out/`): `*_final.mp4`, `*_miniatura.jpg` (só vídeo gra
 | `--audio-weight 0-1` | peso do áudio (gritos, tiros) vs movimento na escolha (padrão 0.6) |
 | `--music ARQ/PASTA` | música de fundo; abaixa sozinha quando você fala |
 | `--subs --lang pt` | legendas automáticas gravadas no vídeo |
+| `--sub-mode line/group/word` | estilo da legenda: `line` = frase inteira (padrão); `group` = bloco de poucas palavras com a palavra falada destacada; `word` = uma palavra por vez, grande (estilo Shorts). Usa os tempos por palavra do Whisper |
+| `--sub-words N` / `--sub-color #RRGGBB` | palavras por bloco no modo `group` (padrão 3) e cor da palavra destacada (padrão `#FFDE1E`) |
 | `--extras auto/on/off` | intro + miniatura (auto = só se final >= `--long-min`, padrão 180 s) |
 | `--intro-video ARQ` | usa sua intro em vez da gerada |
 | `--shorts` | gera versão vertical 9:16 de até 58 s |
@@ -168,14 +170,15 @@ Fonte: vídeo "Claude cria e edita vídeo com um único prompt" (analisado com a
 | Técnica citada | Situação |
 |---|---|
 | Ducking, loudness nos padrões das plataformas | tem (`--lufs` ajusta o alvo) |
-| Legendas a partir da transcrição | tem (por trecho; falta palavra a palavra) |
+| Legendas a partir da transcrição | tem: por frase e palavra a palavra (`--sub-mode`) |
 | Revisão do vídeo final (quadros, volume, roteiro) | tem: `scripts/qa_video.py` |
 | Cortar gravação falada, tirar silêncios, EDL | tem: `--cut-silences` (não remove "erros" de fala, só silêncio) |
 | Easing e transições | tem no slideshow (`--photo-transition`, zoom suave) |
 | Detecção de rosto (recorte do Short seguindo o rosto) | falta; viável com OpenCV, precisa de gravação com rosto para testar |
 | Recorte de pessoa/fundo (título atrás de você), rastreamento de objetos | falta; exige modelos de visão (segmentação/tracking) |
 | OCR (ler texto na tela e dar nota ao trecho) | tem: `--ocr` (RapidOCR), mas só para texto escrito; kills do Arc Raiders são só visuais, então não servem |
-| Legenda palavra a palavra / cortes em cima de palavras | falta; viável com `word_timestamps` do Whisper |
+| Legenda palavra a palavra | tem: `--sub-mode group/word` (testado com fala sintética em inglês; não testado em pt) |
+| Cortes em cima de palavras | falta |
 | Animação por código (Remotion, HyperFrames, GSAP, Three.js: navegador sem janela + FFmpEG) | falta; stack JS/Chromium |
 | Vídeos de apoio (Pexels API) + acerto de cor | falta; precisa de chave da API (gratuita) |
 | Voz (ElevenLabs), avatar (HeyGen), efeitos sonoros e trilha por texto | falta; serviços pagos com conta/chave |

@@ -389,18 +389,21 @@ def join_xfade(names, out, secs, trans, fade, enc, cwd):
 
 
 # ---------------------------------------------------------------------- legendas
-def transcribe(video, model_name, lang):
+def transcribe(video, model_name, lang, words=False):
+    """Devolve [(início, fim, texto, palavras)]; 'palavras' = [(início, fim, palavra)] (vazio se words=False)."""
     from faster_whisper import WhisperModel
     print("  transcrevendo (Whisper)...")
     for device in ("auto", "cpu"):  # "auto" tenta a GPU; sem as DLLs CUDA (cublas) cai para a CPU
         try:
             model = WhisperModel(model_name, device=device, compute_type="int8")
-            segs, info = model.transcribe(str(video), language=lang, vad_filter=True, beam_size=5)
+            segs, info = model.transcribe(str(video), language=lang, vad_filter=True, beam_size=5,
+                                          word_timestamps=words)
             out = []
             for s in segs:  # o erro de CUDA só aparece aqui, ao consumir o gerador
                 if s.no_speech_prob > 0.6 or s.avg_logprob < -1.2 or not s.text.strip():
                     continue
-                out.append((s.start, s.end, s.text.strip()))
+                ws = [(w.start, w.end, w.word.strip()) for w in (s.words or []) if w.word.strip()]
+                out.append((s.start, s.end, s.text.strip(), ws))
             break
         except Exception as e:
             if device == "cpu":
@@ -412,10 +415,71 @@ def transcribe(video, model_name, lang):
 
 def write_srt(segs, offset, path, width):
     lines = []
-    for i, (s, e, text) in enumerate(segs, 1):
+    for i, (s, e, text, *_) in enumerate(segs, 1):
         lines.append(f"{i}\n{ts(s + offset)} --> {ts(e + offset)}\n"
                      + "\n".join(textwrap.wrap(text, width)) + "\n")
     Path(path).write_text("\n".join(lines), encoding="utf-8")
+
+
+def ass_ts(t):
+    cs = int(round(max(t, 0) * 100))
+    return f"{cs // 360000}:{cs // 6000 % 60:02}:{cs // 100 % 60:02}.{cs % 100:02}"
+
+
+def ass_color(hex_rgb):
+    """'#FFDE1E' -> '&H001EDEFF' (o ASS usa BGR)."""
+    h = hex_rgb.lstrip("#")
+    return f"&H00{h[4:6]}{h[2:4]}{h[0:2]}".upper()
+
+
+def group_words(words, max_words, max_gap=0.6):
+    """Agrupa palavras em blocos de até max_words, quebrando em pausa longa ou pontuação final."""
+    groups, cur = [], []
+    for w in words:
+        if cur and (len(cur) >= max_words or w[0] - cur[-1][1] > max_gap
+                    or cur[-1][2][-1:] in ".!?"):
+            groups.append(cur)
+            cur = []
+        cur.append(w)
+    if cur:
+        groups.append(cur)
+    return groups
+
+
+def write_ass_words(segs, offset, path, w, h, mode, color, vertical, max_words=3):
+    """Legenda palavra a palavra (ASS). mode='group': bloco de palavras com a atual destacada;
+    mode='word': uma palavra por vez, grande. As palavras vêm do Whisper (word_timestamps)."""
+    words = sorted((x for seg in segs for x in seg[3]), key=lambda x: x[0])
+    size = int(h * (0.052 if vertical else 0.062)) if mode == "group" else int(h * (0.075 if vertical else 0.10))
+    marg = int(h * (0.22 if vertical else 0.08))
+    hi, base = ass_color(color), "&H00FFFFFF"
+    head = ("[Script Info]\nScriptType: v4.00+\nWrapStyle: 2\nScaledBorderAndShadow: yes\n"
+            f"PlayResX: {w}\nPlayResY: {h}\n\n[V4+ Styles]\n"
+            "Format: Name,Fontname,Fontsize,PrimaryColour,SecondaryColour,OutlineColour,BackColour,Bold,Italic,"
+            "Underline,StrikeOut,ScaleX,ScaleY,Spacing,Angle,BorderStyle,Outline,Shadow,Alignment,"
+            "MarginL,MarginR,MarginV,Encoding\n"
+            f"Style: Default,Arial,{size},{base},{base},&H00000000,&H64000000,1,0,0,0,100,100,0,0,1,"
+            f"{max(3, size // 12)},0,2,{int(w * .06)},{int(w * .06)},{marg},1\n\n"
+            "[Events]\nFormat: Layer,Start,End,Style,Name,MarginL,MarginR,MarginV,Effect,Text\n")
+    ev = []
+
+    def clean(x):
+        return x.upper().replace("{", "(").replace("}", ")")
+
+    groups = group_words(words, max_words if mode == "group" else 1)
+    for gi, grp in enumerate(groups):
+        after = groups[gi + 1][0][0] if gi + 1 < len(groups) else 1e9  # início do próximo bloco
+        for k, (s, e, _) in enumerate(grp):
+            nxt = grp[k + 1][0] if k + 1 < len(grp) else min(e + 0.15, after)
+            end = max(nxt, s + 0.08)  # sem lacunas dentro do bloco: a palavra segue até a próxima começar
+            if mode == "word":
+                text = clean(grp[k][2])
+            else:
+                text = " ".join((f"{{\\c{hi}}}{clean(x[2])}{{\\c{base}}}" if j == k else clean(x[2]))
+                                for j, x in enumerate(grp))
+            ev.append(f"Dialogue: 0,{ass_ts(s + offset)},{ass_ts(end + offset)},Default,,0,0,0,,{text}")
+    Path(path).write_text(head + "\n".join(ev) + "\n", encoding="utf-8")
+    return len(ev)
 
 
 # ------------------------------------------------------- miniatura e intro (Pillow)
@@ -524,7 +588,8 @@ def final_pass(video, out, dur, music, music_vol, srt, sub_style, enc, cwd, lufs
         cmd += ["-stream_loop", "-1", "-i", music]
     fc, vmap = [], "0:v"
     if srt:
-        fc.append(f"[0:v]subtitles={srt}:force_style='{sub_style}'[v]")
+        fs = f":force_style='{sub_style}'" if sub_style else ""
+        fc.append(f"[0:v]subtitles={srt}{fs}[v]")
         vmap = "[v]"
     norm = f"loudnorm=I={lufs:g}:TP=-1.5:LRA=11,aresample=48000"
     if music:
@@ -564,7 +629,8 @@ def produce(clips, out, tmp, args, w, h, *, vertical=False, allow_extras=True, t
     segs = []
     if args.subs and not args.photos_mode:
         try:
-            segs = transcribe(work / "cut.mp4", args.whisper_model, args.lang)
+            segs = transcribe(work / "cut.mp4", args.whisper_model, args.lang,
+                              words=args.sub_mode != "line")
         except Exception as exc:  # noqa: BLE001
             print(f"  ! legendas puladas ({exc})")
 
@@ -590,11 +656,20 @@ def produce(clips, out, tmp, args, w, h, *, vertical=False, allow_extras=True, t
             base = "full.mp4"
 
     srt = None
-    if segs:
+    style = None
+    if segs and args.sub_mode != "line" and any(s[3] for s in segs):
+        n = write_ass_words(segs, offset, work / "subs.ass", w, h, args.sub_mode, args.sub_color, vertical,
+                            args.sub_words)
+        print(f"  legenda palavra a palavra: {n} eventos")
+        srt = "subs.ass"
+    elif segs:
         write_srt(segs, offset, work / "subs.srt", 22 if vertical else 40)
         srt = "subs.srt"
     total, _ = probe(work / base)
-    style = ("FontName=Arial,FontSize=11,Bold=1,Outline=2.5,Shadow=0,MarginV=55,Alignment=2"
+    if srt == "subs.ass":
+        style = None
+    else:
+        style = ("FontName=Arial,FontSize=11,Bold=1,Outline=2.5,Shadow=0,MarginV=55,Alignment=2"
              if vertical else
              "FontName=Arial,FontSize=14,Bold=1,Outline=2.5,Shadow=0,MarginV=45,Alignment=2")
     final_pass(base, str(Path(out).resolve()), total, args.music, args.music_vol,
@@ -631,6 +706,11 @@ def main():
     ap.add_argument("--subs", action="store_true", help="legendas automáticas (Whisper)")
     ap.add_argument("--lang", default=None, help="idioma da fala, ex.: pt (padrão: auto)")
     ap.add_argument("--whisper-model", default="small")
+    ap.add_argument("--sub-mode", choices=["line", "group", "word"], default="line",
+                    help="legenda: line = frase inteira (padrão), group = poucas palavras com a atual "
+                         "destacada, word = uma palavra por vez (estilo Shorts)")
+    ap.add_argument("--sub-words", type=int, default=3, help="palavras por bloco no --sub-mode group (padrão 3)")
+    ap.add_argument("--sub-color", default="#FFDE1E", help="cor da palavra destacada (padrão amarelo #FFDE1E)")
     ap.add_argument("--extras", choices=["auto", "on", "off"], default="auto",
                     help="intro + miniatura: auto = só se o vídeo final for grande")
     ap.add_argument("--long-min", type=float, default=180, help="segundos p/ considerar 'grande'")
