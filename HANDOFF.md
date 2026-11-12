@@ -1,6 +1,6 @@
 # HANDOFF - estado do projeto autoedit-youtube
 
-Atualizado em 12/11/2026 (fim da 2ª sessão da nuvem). Branch: `claude/gifted-ptolemy-utozea` (PR para `main`).
+Atualizado em 12/11/2026 (fim da 2ª sessão da nuvem; ver seção 6, itens 5 a 7). Branch: `claude/gifted-ptolemy-utozea` (PR para `main`).
 Leia também: `CLAUDE.md` (regras do projeto, lido sozinho pelas sessões) e `README.md` (uso e tabela de opções).
 
 ## 1. Para retomar em uma sessão nova (copiar e colar)
@@ -30,7 +30,7 @@ scripts de setup.
 |---|---|---|
 | Legenda palavra a palavra | `--sub-mode group/word`, `--sub-words`, `--sub-color` (ASS) | fala sintética (espeak-ng) em inglês, Whisper `tiny`; NÃO em pt |
 | Rosto no Short | `--short-crop face/facecam` (YuNet; modelo baixa sozinho) | foto de rosto em vídeo sintético; sem rosto cai no enquadramento normal; NÃO com webcam real |
-| B-roll Pexels/Pixabay | `--broll`, `--broll-fonte`, `--pexels-key`/`--pixabay-key` (ou env), `--broll-color` | servidor de mentira local para os dois; NÃO com chave real. Pexels pausou chaves novas (12/11/2026): use Pixabay |
+| B-roll Pexels/Pixabay | `--broll`, `--broll-fonte`, `--pexels-key`/`--pixabay-key` (ou env), `--broll-color` | servidor de mentira local (Pexels e Pixabay) + **chave real do Pixabay no PC do usuário**: a busca funcionou; o download deu 403 (User-Agent padrão do Python) e foi corrigido no `cb9baa7`; o usuário depois viu os clipes no Short (a confirmar a saída exata). Pexels pausou chaves novas (12/11/2026) |
 | Pessoa/fundo e rastreio | `scripts/pessoa_fundo.py`, `scripts/rastrear.py` | foto de rosto em vídeo (recorte `humano` bom, `leve` grosseiro); rastreio erro médio ~19 px |
 | Animação HTML | `scripts/animar_html.py` + `scripts/animacoes/*.html` (GSAP) | Chromium da nuvem; NÃO no Windows |
 Ainda pagos/sem implementar: voz (ElevenLabs), avatar (HeyGen), efeitos sonoros/trilha por texto. Cortes em cima de palavras: não feito.
@@ -78,15 +78,29 @@ vigia da fila e dossiê rodando de verdade no PC do usuário.
    dependência nova). Precisa de 1-2 capturas do momento do abate e de dizer onde na tela aparece (podem ir na pasta
    `Autoedit` do OneDrive; imagens o Claude consegue abrir).
 2. Palavras padrão do `--ocr` (`victory`, `extracted`...) são palpites, não conferidos com o jogo.
-3. Testar com material real: legenda em pt, rosto de webcam, Pexels com chave, recorte/rastreio com gravação sua, `setup_windows.ps1`
+3. Testar com material real: legenda em pt, rosto de webcam, recorte/rastreio com gravação sua, `setup_windows.ps1`
    (agora instala também `requirements-visao.txt`, `requirements-animacao.txt` e o Chromium do Playwright).
 4. Rodar `autoedit.py` e `qa_video.py` num trecho de gameplay real e ajustar `--audio-weight`, `--min-motion` e `--ocr-*`.
+
+5. **B-roll não combina com gameplay**: o `--broll` só busca as palavras que o usuário passa e insere a cada N s, sem entender o
+   conteúdo. O teste com `"city night"` num Short de Arc Raiders deu clipes aleatórios (esperado). Serve para vídeo falado
+   (`--cut-silences`). Ideias adiadas: gravar no `creditos_broll.txt` os horários de cada b-roll; modo que só lista o que baixaria.
+6. **Próximos passos combinados com o usuário (nesta ordem):** (a) ElevenLabs: narração/efeitos, chave em `ELEVENLABS_API_KEY`
+   (nunca no repositório), código + teste contra servidor falso; (b) HeyGen (API cobrada à parte da assinatura); (c) usar o
+   **Remotion** de verdade (o usuário prefere o original; é grátis para pessoas e empresas com até 3 funcionários, pede Node).
+   Preços levantados (sites de terceiros, divergem; confirmar nas páginas oficiais): ElevenLabs grátis 10 mil créditos/mês,
+   Starter US$ 5-6, Creator US$ 22, Pro US$ 99; HeyGen grátis (3 vídeos, 720p, marca d'água), Creator US$ 29, Pro US$ 49-99,
+   Business US$ 149 + US$ 20/assento.
+7. **Branch:** `claude/gifted-ptolemy-utozea` já tinha o PR #1 mergeado; as mudanças novas estão por cima (há um commit vazio
+   `docs: update HANDOFF/CLAUDE...`). O force push para recomeçar do `main` foi negado e o usuário não o autorizou. O diff contra
+   o `main` contém só o trabalho novo, então um PR novo sai limpo. Se quiser a história limpa: recomeçar do `main` e reaplicar com `git cherry-pick`.
 
 ## 7. Armadilhas (resumo; lista completa no `CLAUDE.md`)
 - `av` 17+ quebra o `faster-whisper`: manter `av<17`.
 - Windows: `python` pode ser o atalho da Store (use `py`); `winget` só atualiza o PATH em janela nova do PowerShell.
 - OCR: recortes finos da tela precisam de preenchimento (já feito); `--ocr-every` menor acha textos curtos, mas demora mais.
 - OpenCV 5 não tem Haar (`CascadeClassifier`): rosto usa YuNet via `cv2.FaceDetectorYN`; modelos vêm do Hugging Face (o raw do GitHub do opencv_zoo é ponteiro LFS).
+- Pixabay: a chave vai na URL (`?key=`), não em cabeçalho; por isso o `request_credential` da sessão (que injeta cabeçalho) não serve para ele. O download precisa de `User-Agent` próprio (o `Python-urllib` padrão leva 403). Não tentar se passar por navegador.
 - Nunca commitar vídeos, `test_footage/`, `autoedit_out/`, `dossie_*/` nem chaves/tokens.
 
 ## 8. Ambiente e pessoas
@@ -94,4 +108,9 @@ vigia da fila e dossiê rodando de verdade no PC do usuário.
   script de setup no ambiente; só o que está no repositório vale.
 - O PC do usuário é Windows com placa NVIDIA (sem as DLLs CUDA do Whisper, por isso a CPU). Pasta de trabalho no OneDrive:
   `Documentos\Autoedit` (contém `video_referencia.mp4`, `dossie_video_referencia/` e `fila/`).
+- No PC do usuário o projeto está em `C:\Users\danil\Documents\autoedit-youtube`, na branch `claude/gifted-ptolemy-utozea`;
+  `PIXABAY_API_KEY` já está gravada (`setx`; só vale em PowerShell novo, ou carregar com `[Environment]::GetEnvironmentVariable`).
+  O console do Windows mostra acentos quebrados no `--help` (`chcp 65001` resolve; é só cosmético). Vídeo de teste real:
+  `C:\Users\danil\Videos\Captures\arc_raiders_short_1080x1920 - short.mp4` (usar aspas por causa dos espaços).
+- A sessão da nuvem não alcança `pixabay.com` nem recebe chave de query-string; os testes com chave real são feitos no PC do usuário.
 - Nenhuma tarefa agendada ficou ativa no fim desta sessão.

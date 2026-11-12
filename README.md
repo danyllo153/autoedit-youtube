@@ -235,7 +235,7 @@ Fonte: vídeo "Claude cria e edita vídeo com um único prompt" (analisado com a
 | Legenda palavra a palavra | tem: `--sub-mode group/word` (testado com fala sintética em inglês; não testado em pt) |
 | Cortes em cima de palavras | falta |
 | Animação por código (Remotion, HyperFrames, GSAP, Three.js: navegador sem janela + FFmpeg) | tem: `scripts/animar_html.py` (GSAP em 2 modelos prontos; Three.js não testado; no Windows não testado) |
-| Vídeos de apoio (Pexels/Pixabay) + acerto de cor | tem: `--broll` (testado só contra um servidor de mentira local; falta rodar com chave real; Pexels está sem emitir chaves) |
+| Vídeos de apoio (Pexels/Pixabay) + acerto de cor | tem: `--broll` (testado com servidor de mentira e com chave real do Pixabay no PC do usuário; Pexels está sem emitir chaves; serve para vídeo falado, não para gameplay) |
 | Voz (ElevenLabs), avatar (HeyGen), efeitos sonoros e trilha por texto | falta; serviços pagos com conta/chave |
 Chaves e contas nunca entram no repositório.
 
