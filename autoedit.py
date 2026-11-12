@@ -538,7 +538,10 @@ def pexels_download(item):
     dest = d / f"{item['id']}.mp4"  # o id já leva o prefixo da fonte
     if not dest.exists():
         tmpf = dest.with_suffix(".part")
-        urllib.request.urlretrieve(item["file"], tmpf)
+        # identifica o programa (como na busca); o 'Python-urllib' padrão costuma ser recusado com 403
+        req = urllib.request.Request(item["file"], headers={"User-Agent": "autoedit/1.0 (b-roll downloader)"})
+        with urllib.request.urlopen(req, timeout=60) as r, open(tmpf, "wb") as f:
+            shutil.copyfileobj(r, f)
         tmpf.replace(dest)
     return dest
 
@@ -591,6 +594,7 @@ def plan_broll(clips, args, vertical):
         print(f"  ! nenhum vídeo do {nome} encontrado; seguindo sem b-roll")
         return {}, [], ""
     plan, credits, acc, nxt, qi = {}, [], 0.0, args.broll_every, 0
+    falhou = set()
     for i, c in enumerate(clips):
         d = c["e"] - c["s"]
         if c.get("photo") or acc < nxt or d < args.broll_secs + 1.0:
@@ -602,10 +606,14 @@ def plan_broll(clips, args, vertical):
             acc += d
             continue
         item = pool[q][(qi - 1) // len(queries) % len(pool[q])]
+        if item["id"] in falhou:
+            acc += d
+            continue
         try:
             path = pexels_download(item)
         except Exception as exc:  # noqa: BLE001
-            print(f"  ! download do {nome} falhou ({exc})")
+            falhou.add(item["id"])
+            print(f"  ! download do {nome} falhou ({exc}) em {item['file'].split('/')[2]}")
             acc += d
             continue
         grade = ""
