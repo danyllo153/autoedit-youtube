@@ -24,6 +24,7 @@ import subprocess
 import sys
 import tempfile
 import textwrap
+import unicodedata
 from pathlib import Path
 
 import numpy as np
@@ -133,6 +134,82 @@ def motion_score(cap, s, e, samples=4):
     return float(np.mean(vals)) if vals else 0.0
 
 
+# ------------------------------------------------ OCR: entender o jogo (kills, vitória...)
+# Palavras que, vistas na tela, marcam um bom momento. Formato "palavra=peso". São palpites genéricos:
+# rode com --ocr, veja o que o OCR leu no seu HUD em <nome>_ocr.json e ajuste com --ocr-keywords.
+DEFAULT_OCR_KEYWORDS = ("victory=1,victorious=1,well played=1,extracted=1,extraction successful=1,"
+                        "vitoria=1,eliminated=0.7,eliminado=0.7,killed=0.7,kill=0.5,knocked=0.5,"
+                        "raider down=0.7,you won=1")
+
+
+def norm_text(t):
+    t = unicodedata.normalize("NFKD", t.lower())
+    t = "".join(c for c in t if not unicodedata.combining(c))
+    return " " + re.sub(r"[^a-z0-9]+", " ", t).strip() + " "
+
+
+def parse_keywords(spec):
+    kws = {}
+    for part in spec.split(","):
+        part = part.strip()
+        if not part:
+            continue
+        word, _, w = part.partition("=")
+        kws[norm_text(word).strip()] = float(w) if w.strip() else 1.0
+    return kws
+
+
+def parse_region(spec):
+    try:
+        x0, y0, x1, y1 = (float(v) for v in spec.split(","))
+        assert 0 <= x0 < x1 <= 1 and 0 <= y0 < y1 <= 1
+    except (ValueError, AssertionError):
+        sys.exit("--ocr-region deve ser 'x0,y0,x1,y1' em frações de 0 a 1 (ex.: 0,0.6,1,1 = faixa de baixo).")
+    return x0, y0, x1, y1
+
+
+def make_ocr_engine():
+    try:
+        from rapidocr_onnxruntime import RapidOCR
+    except ImportError:
+        sys.exit("--ocr precisa do RapidOCR:  pip install -r requirements-ocr.txt")
+    return RapidOCR()
+
+
+def ocr_chunk(cap, s, e, every, region, engine, kws):
+    """Lê o texto de alguns quadros do trecho. Devolve nota 0-1 (soma dos pesos das palavras achadas)."""
+    import cv2
+    n = int(min(12, max(1, round((e - s) / every))))
+    x0, y0, x1, y1 = region
+    texts, matched = [], {}
+    for i in range(n):
+        cap.set(cv2.CAP_PROP_POS_MSEC, (s + (e - s) * (i + 0.5) / n) * 1000)
+        ok, f = cap.read()
+        if not ok:
+            continue
+        h, w = f.shape[:2]
+        f = f[int(h * y0):int(h * y1), int(w * x0):int(w * x1)]
+        if f.shape[1] > 1280:
+            f = cv2.resize(f, (1280, max(1, int(f.shape[0] * 1280 / f.shape[1]))))
+        # o detector do RapidOCR não acha texto em recortes finos (testado: faixa de 144 px = 0 de 7
+        # acertos, com 360 px = 7 de 7): completa com preto até 360 px em cada lado
+        ph, pw = max(0, 360 - f.shape[0]), max(0, 360 - f.shape[1])
+        if ph or pw:
+            f = cv2.copyMakeBorder(f, ph // 2, ph - ph // 2, pw // 2, pw - pw // 2,
+                                   cv2.BORDER_CONSTANT, value=(0, 0, 0))
+        res, _ = engine(f)
+        for _, txt, conf in (res or []):
+            if float(conf) < 0.5:
+                continue
+            texts.append(txt)
+            nt = norm_text(txt)
+            for kw, wt in kws.items():
+                if f" {kw} " in nt:
+                    matched[kw] = wt
+    return {"score": min(1.0, sum(matched.values())), "matched": sorted(matched),
+            "texts": sorted(set(texts))}
+
+
 def percentile_rank(x):
     x = np.asarray(x, dtype=float)
     if len(x) < 2 or np.ptp(x) < 1e-9:
@@ -148,28 +225,38 @@ def score_video(path, args):
     print(f"  {len(chunks)} trechos candidatos — pontuando áudio e movimento...")
     rms, win = audio_rms(path) if has_audio else (np.zeros(1), 0.5)
     cap = cv2.VideoCapture(str(path))
-    a_sc, m_sc = [], []
+    a_sc, m_sc, ocr_res = [], [], []
+    engine = kws = region = None
+    if args.ocr:
+        engine, kws, region = make_ocr_engine(), parse_keywords(args.ocr_keywords), parse_region(args.ocr_region)
+        print(f"  OCR (~{sum(e - s for s, e in chunks) / args.ocr_every:.0f} quadros) — procurando: "
+              f"{', '.join(kws)}")
     for s, e in chunks:
         seg = rms[int(s / win): max(int(s / win) + 1, int(e / win))]
         a_sc.append(0.6 * seg.mean() + 0.4 * seg.max() if len(seg) else 0.0)
         m_sc.append(motion_score(cap, s, e))
+        if engine:
+            ocr_res.append(ocr_chunk(cap, s, e, args.ocr_every, region, engine, kws))
     cap.release()
-    return dur, has_audio, chunks, np.array(a_sc), np.array(m_sc)
+    return dur, has_audio, chunks, np.array(a_sc), np.array(m_sc), ocr_res
 
 
-def select_clips(items, target, aw, min_motion=0.5):
+def select_clips(items, target, aw, min_motion=0.5, ow=0.0):
     """items: lista de dicts (src, s, e, a, m). Retorna os melhores até 'target' s."""
     a_all = percentile_rank([i["a"] for i in items])
     m_all = percentile_rank([i["m"] for i in items])
     if np.ptp([i["a"] for i in items]) < 1e-9:
         aw = 0.0  # sem áudio útil: só movimento
     for i, (a, m) in zip(items, zip(a_all, m_all)):
-        i["score"] = float(aw * a + (1 - aw) * m)
+        base = aw * a + (1 - aw) * m
+        # ow > 0 (--ocr): trechos com palavras-chave na tela (kill, vitória) ganham ow de nota extra
+        i["score"] = float((1 - ow) * base + ow * i.get("o", 0.0))
     # descarta trechos quase parados (menus, inventário, tela de loading), se sobrar material
     pool = items
     ms = np.array([i["m"] for i in items])
     if min_motion > 0 and np.ptp(ms) > 1e-9:
-        keep = [i for i in items if i["m"] >= min_motion * float(np.median(ms))]
+        # tela de vitória costuma ser parada: trecho com palavra-chave do OCR nunca é descartado
+        keep = [i for i in items if i["m"] >= min_motion * float(np.median(ms)) or i.get("o", 0) > 0]
         if sum(i["e"] - i["s"] for i in keep) >= target:
             pool = keep
     chosen, total = [], 0.0
@@ -554,6 +641,18 @@ def main():
     ap.add_argument("--min-motion", type=float, default=0.5,
                     help="descarta trechos com movimento < X * mediana (menus/inventário). 0 desliga")
     ap.add_argument("--shorts-only", action="store_true", help="gera só o Short vertical")
+    ap.add_argument("--ocr", action="store_true",
+                    help="lê o texto da tela (OCR) e dá nota extra a trechos com kill/vitória etc. "
+                         "(pip install -r requirements-ocr.txt)")
+    ap.add_argument("--ocr-keywords", default=DEFAULT_OCR_KEYWORDS,
+                    help="palavras que marcam bons momentos, 'palavra=peso,outra=peso' "
+                         "(veja o padrão no código; calibre com o <nome>_ocr.json)")
+    ap.add_argument("--ocr-weight", type=float, default=0.5,
+                    help="quanto da nota vem do OCR, 0-1 (padrão 0,5: trecho com palavra-chave passa à frente)")
+    ap.add_argument("--ocr-every", type=float, default=1.5, help="lê 1 quadro a cada X s do trecho (padrão 1,5)")
+    ap.add_argument("--ocr-region", default="0,0,1,1",
+                    help="área da tela lida pelo OCR, frações 'x0,y0,x1,y1' (padrão tela toda; "
+                         "ex.: 0,0.6,1,1 = faixa de baixo)")
     ap.add_argument("--cut-silences", action="store_true",
                     help="gravação falada: corta os silêncios (mantém tudo que tem som) e salva a EDL. "
                          "Ignora --target e a pontuação por cenas")
@@ -617,11 +716,13 @@ def main():
                 items, total_dur = speech_items(videos, args)
             else:
                 for order, v in enumerate(videos):
-                    dur, has_audio, chunks, a_sc, m_sc = score_video(v, args)
+                    dur, has_audio, chunks, a_sc, m_sc, ocr_res = score_video(v, args)
                     total_dur += dur
+                    ocr_res = ocr_res or [{"score": 0.0, "matched": [], "texts": []}] * len(chunks)
                     items += [{"src": str(v), "order": order, "s": s, "e": e, "a": a, "m": m,
-                               "has_audio": has_audio}
-                              for (s, e), a, m in zip(chunks, a_sc, m_sc)]
+                               "has_audio": has_audio, "o": r["score"], "words": r["matched"],
+                               "texts": r["texts"]}
+                              for (s, e), a, m, r in zip(chunks, a_sc, m_sc, ocr_res)]
             if not items:
                 sys.exit("Nenhum trecho encontrado (vídeo muito curto, ou só silêncio?).")
             if args.cut_silences:
@@ -632,10 +733,20 @@ def main():
                 write_edl(clips, out_dir / f"{stem}.edl", title)
             else:
                 target = args.target or min(max(total_dur * 0.25, 30), 600)
-                clips, got = select_clips(items, target, args.audio_weight, args.min_motion)
+                ow = args.ocr_weight if args.ocr else 0.0
+                clips, got = select_clips(items, target, args.audio_weight, args.min_motion, ow)
                 print(f"→ {len(clips)} trechos escolhidos, {got:.0f}s (alvo {target:.0f}s)")
+                if args.ocr:
+                    hits = [i for i in items if i["words"]]
+                    print(f"  OCR: {len(hits)} trechos com palavra-chave, {sum(1 for c in clips if c['words'])} "
+                          f"entraram no corte")
+                    (out_dir / f"{stem}_ocr.json").write_text(json.dumps(
+                        [{"src": Path(i["src"]).name, "start": round(i["s"], 2), "end": round(i["e"], 2),
+                          "matched": i["words"], "texts": i["texts"]} for i in items if i["texts"]],
+                        indent=1, ensure_ascii=False), encoding="utf-8")
             plan = [{"src": Path(c["src"]).name, "start": round(c["s"], 2),
-                     "end": round(c["e"], 2), "score": round(c["score"], 3)} for c in clips]
+                     "end": round(c["e"], 2), "score": round(c["score"], 3),
+                     **({"ocr": c["words"]} if c.get("words") else {})} for c in clips]
             (out_dir / f"{stem}_trechos.json").write_text(json.dumps(plan, indent=2))
             if args.plan_only:
                 print(json.dumps(plan, indent=2))
@@ -663,7 +774,8 @@ def main():
                     if acc >= 55:
                         break
             else:
-                sh, _ = select_clips(items, 55, args.audio_weight, args.min_motion)
+                sh, _ = select_clips(items, 55, args.audio_weight, args.min_motion,
+                                     args.ocr_weight if args.ocr else 0.0)
             produce(sh, out_dir / f"{stem}_shorts.mp4", tmp, args, 1080, 1920,
                     vertical=True, allow_extras=False, title=title)
         print(f"\n✔ pronto! Arquivos em: {out_dir.resolve()}")
