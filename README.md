@@ -27,7 +27,7 @@ python autoedit.py fotos/ --music musicas/ --photo-secs 3.5
 # Só ver quais trechos seriam escolhidos (não renderiza)
 python autoedit.py gameplay.mp4 --plan-only
 
-# Gameplay: dá nota extra a trechos em que aparece kill/vitória na tela (OCR)
+# Gameplay: dá nota extra a trechos em que aparece texto-chave na tela (OCR; só para o que o jogo escreve)
 python autoedit.py gameplay.mp4 --ocr --target 480
 
 # Gravação falada: tira os silêncios e salva a lista de cortes (EDL) para abrir no Resolve/Premiere
@@ -53,8 +53,8 @@ Saída (pasta `autoedit_out/`): `*_final.mp4`, `*_miniatura.jpg` (só vídeo gra
 | `--shorts` | gera versão vertical 9:16 de até 58 s |
 | `--shorts-only` | gera só o Short vertical |
 | `--short-crop square` | Short: recorta o centro 1:1 (gameplay maior; perde bordas/HUD) |
-| `--ocr` | lê o texto da tela (RapidOCR) e dá nota extra a trechos com palavras de kill/vitória; grava `*_ocr.json` com o que leu |
-| `--ocr-keywords "a=1,b=0.7"` | palavras que marcam bons momentos, com peso 0-1 (o padrão são palpites: calibre com o `*_ocr.json`) |
+| `--ocr` | lê o texto escrito na tela (RapidOCR) e dá nota extra a trechos com palavras-chave; grava `*_ocr.json` com o que leu. Não detecta abates só visuais |
+| `--ocr-keywords "a=1,b=0.7"` | palavras escritas na tela que marcam bons momentos, com peso 0-1 (o padrão são palpites: calibre com o `*_ocr.json`) |
 | `--ocr-weight X` | quanto da nota vem do OCR, 0-1 (padrão 0,5: trecho com palavra-chave passa à frente dos demais) |
 | `--ocr-every S` | lê 1 quadro a cada S segundos do trecho (padrão 1,5; menor = acha textos curtos, mas demora mais) |
 | `--ocr-region x0,y0,x1,y1` | área da tela lida, em frações (padrão tela toda; `0,0.6,1,1` = faixa de baixo) |
@@ -68,13 +68,14 @@ Saída (pasta `autoedit_out/`): `*_final.mp4`, `*_miniatura.jpg` (só vídeo gra
 | `--transition-secs S` | duração da transição entre fotos (padrão 0,6 s) |
 | `--gpu` | exporta com NVENC (placa NVIDIA) |
 
-## OCR: pontuar kills e vitórias (`--ocr`)
-O jogo avisa na tela ("VICTORY", "ELIMINATED"...); o `--ocr` lê esses textos em alguns quadros de cada trecho e
-dá nota extra a quem tem palavra-chave. Trechos com palavra-chave nunca são descartados pelo filtro de cena parada
+## OCR: textos escritos na tela (`--ocr`)
+**Atenção:** o OCR só enxerga o que o jogo ESCREVE. No Arc Raiders o abate ao vivo é só visual (não há texto de kill),
+então o `--ocr` **não detecta kills** ali. Ele serve para jogos que escrevem o abate/vitória (o usuário citou Call of Duty como o caso que faz isso) ou para telas de resultado com texto. Para sinais
+visuais sem texto, o caminho é outro (ver "Limitações conhecidas").
+O `--ocr` lê o texto em alguns quadros de cada trecho e dá nota extra a quem tem palavra-chave. Trechos com palavra-chave nunca são descartados pelo filtro de cena parada
 (`--min-motion`), porque a tela de vitória costuma ser parada.
 
-**Calibre com o seu jogo:** as palavras padrão são palpites genéricos, ainda não conferidos com gameplay real de
-Arc Raiders. Rode uma vez com `--ocr --plan-only`, abra `autoedit_out/<nome>_ocr.json` (o texto que o OCR leu em cada
+**Calibre com o seu jogo:** as palavras padrão são palpites genéricos, ainda não conferidos com o jogo. Rode uma vez com `--ocr --plan-only`, abra `autoedit_out/<nome>_ocr.json` (o texto que o OCR leu em cada
 trecho), veja como o seu HUD escreve os avisos e passe as palavras certas em `--ocr-keywords`. Se o aviso aparece
 sempre no mesmo canto, `--ocr-region` deixa a leitura mais rápida e evita falsos positivos.
 
@@ -173,7 +174,7 @@ Fonte: vídeo "Claude cria e edita vídeo com um único prompt" (analisado com a
 | Easing e transições | tem no slideshow (`--photo-transition`, zoom suave) |
 | Detecção de rosto (recorte do Short seguindo o rosto) | falta; viável com OpenCV, precisa de gravação com rosto para testar |
 | Recorte de pessoa/fundo (título atrás de você), rastreamento de objetos | falta; exige modelos de visão (segmentação/tracking) |
-| OCR (achar "VICTORY", kills etc. na tela e dar nota ao trecho) | tem: `--ocr` (RapidOCR; testado com vídeo sintético, falta calibrar as palavras com gameplay real) |
+| OCR (ler texto na tela e dar nota ao trecho) | tem: `--ocr` (RapidOCR), mas só para texto escrito; kills do Arc Raiders são só visuais, então não servem |
 | Legenda palavra a palavra / cortes em cima de palavras | falta; viável com `word_timestamps` do Whisper |
 | Animação por código (Remotion, HyperFrames, GSAP, Three.js: navegador sem janela + FFmpEG) | falta; stack JS/Chromium |
 | Vídeos de apoio (Pexels API) + acerto de cor | falta; precisa de chave da API (gratuita) |
@@ -181,7 +182,7 @@ Fonte: vídeo "Claude cria e edita vídeo com um único prompt" (analisado com a
 Chaves e contas nunca entram no repositório.
 
 ## Limitações conhecidas
-- Sem `--ocr`, a nota dos trechos usa só áudio + movimento; com `--ocr` ela também lê avisos na tela (palavras a calibrar).
+- A nota usa áudio + movimento. Abates e vitórias que são só visuais (Arc Raiders) não são detectados; `--ocr` só lê texto escrito. Falta um sinal visual (ex.: comparar com uma imagem de referência do indicador).
 - Legendas dependem do modelo Whisper (`--whisper-model small` por padrão; `medium` é mais preciso).
 - `watch` vê só a transcrição e quadros espaçados, não o vídeo inteiro.
 - Fotos viram slideshow com cortes secos por padrão (use `--photo-transition`).

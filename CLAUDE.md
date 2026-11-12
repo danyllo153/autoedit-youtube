@@ -42,9 +42,10 @@ miniaturas) e a análise é feita em cima dele. Detalhes e passo a passo em `.cl
 ## Ferramentas do projeto (resumo)
 - `autoedit.py`: pipeline principal. Modos: melhores momentos (cenas + pontuação), `--cut-silences` (gravação falada + EDL),
   fotos (slideshow com `--photo-transition`), `--shorts`/`--shorts-only`. `--lufs` ajusta o volume final.
-- `--ocr` (RapidOCR, `requirements-ocr.txt`): pontua trechos por palavras na tela; grava `<nome>_ocr.json` para calibrar.
+- `--ocr` (RapidOCR, `requirements-ocr.txt`): pontua trechos por TEXTO escrito na tela; grava `<nome>_ocr.json` para calibrar.
+  **No Arc Raiders o abate ao vivo é só visual (sem texto): o OCR não detecta kills lá** (informado pelo usuário: só Call of Duty escreve o abate; o OCR serve para esse tipo de jogo).
   Recortes finos precisam de preenchimento (já feito no código): o detector não lê faixas com menos de ~200 px.
-  As palavras padrão ainda não foram conferidas com gameplay real.
+  As palavras padrão são palpites, não conferidos com o jogo.
 - `scripts/qa_video.py`: revisão do vídeo FINAL (LUFS/pico, silêncios, telas pretas, quadros, fala x roteiro). Rode antes de entregar.
 - `scripts/watch_video.py` / `watch_fila.py`: dossiê de um vídeo de referência (skill `watch`).
 - Mapa do que o vídeo de referência cita e ainda falta (rosto, OCR, Pexels, TTS...): seção "Mapa" do README.
@@ -58,6 +59,6 @@ miniaturas) e a análise é feita em cima dele. Detalhes e passo a passo em `.cl
 - `scenedetect[opencv]` avisa que o extra não existe na 0.7.x; é inofensivo (o OpenCV vem instalado).
 
 ## Limitações conhecidas (candidatas a melhorias)
-- Sem `--ocr` a pontuação só usa áudio e movimento; com `--ocr`, depende de calibrar as palavras com gameplay real.
+- A pontuação não enxerga abates/vitórias só visuais (Arc Raiders): usa áudio + movimento (+ `--ocr` para texto escrito).
 - Legenda depende do download do modelo Whisper.
 - Slideshow: transições só com `--photo-transition` (padrão é corte seco).

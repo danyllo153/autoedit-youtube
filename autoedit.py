@@ -134,12 +134,12 @@ def motion_score(cap, s, e, samples=4):
     return float(np.mean(vals)) if vals else 0.0
 
 
-# ------------------------------------------------ OCR: entender o jogo (kills, vitória...)
-# Palavras que, vistas na tela, marcam um bom momento. Formato "palavra=peso". São palpites genéricos:
-# rode com --ocr, veja o que o OCR leu no seu HUD em <nome>_ocr.json e ajuste com --ocr-keywords.
-DEFAULT_OCR_KEYWORDS = ("victory=1,victorious=1,well played=1,extracted=1,extraction successful=1,"
-                        "vitoria=1,eliminated=0.7,eliminado=0.7,killed=0.7,kill=0.5,knocked=0.5,"
-                        "raider down=0.7,you won=1")
+# ------------------------------------------------ OCR: textos que o jogo ESCREVE na tela
+# Só serve para o que aparece escrito (telas de resultado, avisos). Abates ao vivo costumam ser só visuais
+# (no Arc Raiders não há texto de kill): OCR NÃO detecta kill nesses jogos. Formato "palavra=peso".
+# São palpites genéricos e não conferidos com o jogo: rode com --ocr, veja o que o OCR leu em
+# <nome>_ocr.json e ajuste com --ocr-keywords.
+DEFAULT_OCR_KEYWORDS = "victory=1,victorious=1,well played=1,extracted=1,extraction successful=1,vitoria=1,you won=1"
 
 
 def norm_text(t):
@@ -642,10 +642,10 @@ def main():
                     help="descarta trechos com movimento < X * mediana (menus/inventário). 0 desliga")
     ap.add_argument("--shorts-only", action="store_true", help="gera só o Short vertical")
     ap.add_argument("--ocr", action="store_true",
-                    help="lê o texto da tela (OCR) e dá nota extra a trechos com kill/vitória etc. "
-                         "(pip install -r requirements-ocr.txt)")
+                    help="lê o texto ESCRITO na tela (OCR; não vê abates só visuais) e dá nota extra a trechos "
+                         "com palavras-chave, ex.: tela de resultado (pip install -r requirements-ocr.txt)")
     ap.add_argument("--ocr-keywords", default=DEFAULT_OCR_KEYWORDS,
-                    help="palavras que marcam bons momentos, 'palavra=peso,outra=peso' "
+                    help="palavras escritas na tela que marcam bons momentos, 'palavra=peso,outra=peso' "
                          "(veja o padrão no código; calibre com o <nome>_ocr.json)")
     ap.add_argument("--ocr-weight", type=float, default=0.5,
                     help="quanto da nota vem do OCR, 0-1 (padrão 0,5: trecho com palavra-chave passa à frente)")
