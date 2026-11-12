@@ -91,13 +91,31 @@ Custo: cerca de 0,2 s por quadro lido na CPU (medido em 1280x720). Com o padrão
 gameplay leva alguns minutos a mais na pontuação. Limites: letras pequenas, fundo muito poluído ou fontes
 estilizadas podem não ser lidas; `--ocr-region` com a área do aviso e `--ocr-every` menor ajudam.
 
+## Recorte de pessoa e rastreamento (`scripts/pessoa_fundo.py`, `scripts/rastrear.py`)
+Ferramentas separadas (não passam por `autoedit.py`); rodam na CPU e baixam os modelos sozinhas na 1ª vez para `~/.cache/autoedit`.
+Precisam de `pip install -r requirements-visao.txt` (os scripts de setup já instalam).
+```bash
+# Título grande ATRÁS da pessoa (como no vídeo de referência), entrando aos 0,2 s e saindo aos 4 s
+python scripts/pessoa_fundo.py eu.mp4 --titulo "CLUTCH INSANO" --de 0.2 --ate 4 --modelo humano
+# Trocar o fundo sem tela verde: blur | escuro | cor:#RRGGBB | imagem.jpg
+python scripts/pessoa_fundo.py eu.mp4 --fundo blur
+# Seguir um objeto: marca (anel/caixa + texto) que acompanha, ou recorte vertical que o acompanha
+python scripts/rastrear.py clipe.mp4 --ver                                   # salva o 1º quadro com grade p/ achar a caixa
+python scripts/rastrear.py clipe.mp4 --caixa 100,200,300,300 --texto "OLHA"  # também grava <saida>.json com a posição por quadro
+python scripts/rastrear.py clipe.mp4 --caixa 0.1,0.3,0.2,0.2 --seguir -o vertical.mp4
+```
+`--modelo leve` (padrão, 4,6 MB) é rápido mas a borda sai grosseira; `--modelo humano` (176 MB, baixado uma vez) recorta bem melhor.
+O recorte pega "o que está em destaque": funciona melhor com uma pessoa sozinha e separada do fundo. Custo medido: ~20 s para
+4 s de vídeo 720p na CPU (use `--cada 2` para acelerar). O rastreador (VitTrack) perde o objeto se ele sai da tela ou é coberto;
+o JSON marca esses quadros com `perdido: true`.
+
 ## Vídeos de apoio do Pexels (`--broll`)
 1. Crie uma conta gratuita em pexels.com e peça a chave em pexels.com/api.
 2. Guarde a chave fora do repositório: `setx PEXELS_API_KEY "sua_chave"` (Windows, vale em janelas novas) ou `export PEXELS_API_KEY=...`.
 3. `python autoedit.py gravacao.mp4 --cut-silences --subs --broll "city night,keyboard typing" --broll-every 20`
 Os vídeos baixados ficam em `~/.cache/autoedit/pexels`; os créditos vão para `creditos_pexels.txt` na pasta de saída.
 A licença do Pexels permite uso comercial sem citar o autor (citar é opcional). O limite gratuito da API é de 200 pedidos/hora
-e 20 000/mês (valor informado pelo Pexels; confira na sua conta).
+e 20 000/mês (de memória, não conferido agora; veja os limites atuais na sua conta do Pexels).
 
 ## Como escolhe os trechos
 Cada cena (PySceneDetect) é pontuada por energia do áudio e movimento da imagem; cenas longas
@@ -189,7 +207,7 @@ Fonte: vídeo "Claude cria e edita vídeo com um único prompt" (analisado com a
 | Cortar gravação falada, tirar silêncios, EDL | tem: `--cut-silences` (não remove "erros" de fala, só silêncio) |
 | Easing e transições | tem no slideshow (`--photo-transition`, zoom suave) |
 | Detecção de rosto (recorte do Short seguindo o rosto) | tem: `--short-crop face/facecam` (testado com foto de rosto em vídeo sintético; não testado com webcam real) |
-| Recorte de pessoa/fundo (título atrás de você), rastreamento de objetos | falta; exige modelos de visão (segmentação/tracking) |
+| Recorte de pessoa/fundo (título atrás de você), rastreamento de objetos | tem: `scripts/pessoa_fundo.py` e `scripts/rastrear.py` (testados com uma foto de rosto em vídeo sintético; não testados com gravação real) |
 | OCR (ler texto na tela e dar nota ao trecho) | tem: `--ocr` (RapidOCR), mas só para texto escrito; kills do Arc Raiders são só visuais, então não servem |
 | Legenda palavra a palavra | tem: `--sub-mode group/word` (testado com fala sintética em inglês; não testado em pt) |
 | Cortes em cima de palavras | falta |

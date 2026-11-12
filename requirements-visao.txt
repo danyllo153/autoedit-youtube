@@ -1,0 +1,2 @@
+# Recorte de pessoa (scripts/pessoa_fundo.py) e rastreamento (scripts/rastrear.py). Os modelos baixam sozinhos na 1a vez.
+onnxruntime

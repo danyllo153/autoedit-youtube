@@ -16,7 +16,7 @@ fi
 
 # 2) dependências Python do projeto (requirements.txt é a fonte da verdade)
 echo "[setup] instalando dependências Python..."
-python3 -m pip install -q --disable-pip-version-check -r requirements.txt -r requirements-ocr.txt
+python3 -m pip install -q --disable-pip-version-check -r requirements.txt -r requirements-ocr.txt -r requirements-visao.txt
 
 # 3) yt-dlp: só para baixar links. Na nuvem o YouTube bloqueia o download (anti-robô);
 #    o download real roda no PC do usuário (scripts/baixar_video.ps1 / scripts/watch_fila.py).
