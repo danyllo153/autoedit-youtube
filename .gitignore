@@ -5,3 +5,6 @@ autoedit_out/
 .DS_Store
 # material de teste gerado localmente
 test_footage/
+
+# dossiês gerados por scripts/watch_video.py
+dossie_*/

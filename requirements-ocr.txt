@@ -1,0 +1,2 @@
+# OCR para --ocr (pontua kills/vitória lendo o texto da tela). Instala só com pip.
+rapidocr-onnxruntime
