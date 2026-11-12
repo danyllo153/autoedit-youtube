@@ -55,6 +55,8 @@ Saída (pasta `autoedit_out/`): `*_final.mp4`, `*_miniatura.jpg` (só vídeo gra
 | `--shorts` | gera versão vertical 9:16 de até 58 s |
 | `--shorts-only` | gera só o Short vertical |
 | `--short-crop square` | Short: recorta o centro 1:1 (gameplay maior; perde bordas/HUD) |
+| `--short-crop face` | Short: recorte 9:16 que segue o rosto (YuNet/OpenCV; baixa um modelo de ~230 KB para `~/.cache/autoedit` na 1ª vez). Trecho sem rosto cai no enquadramento normal |
+| `--short-crop facecam` | Short: webcam (recorte em volta do rosto) em cima e o gameplay inteiro embaixo |
 | `--ocr` | lê o texto escrito na tela (RapidOCR) e dá nota extra a trechos com palavras-chave; grava `*_ocr.json` com o que leu. Não detecta abates só visuais |
 | `--ocr-keywords "a=1,b=0.7"` | palavras escritas na tela que marcam bons momentos, com peso 0-1 (o padrão são palpites: calibre com o `*_ocr.json`) |
 | `--ocr-weight X` | quanto da nota vem do OCR, 0-1 (padrão 0,5: trecho com palavra-chave passa à frente dos demais) |
@@ -174,7 +176,7 @@ Fonte: vídeo "Claude cria e edita vídeo com um único prompt" (analisado com a
 | Revisão do vídeo final (quadros, volume, roteiro) | tem: `scripts/qa_video.py` |
 | Cortar gravação falada, tirar silêncios, EDL | tem: `--cut-silences` (não remove "erros" de fala, só silêncio) |
 | Easing e transições | tem no slideshow (`--photo-transition`, zoom suave) |
-| Detecção de rosto (recorte do Short seguindo o rosto) | falta; viável com OpenCV, precisa de gravação com rosto para testar |
+| Detecção de rosto (recorte do Short seguindo o rosto) | tem: `--short-crop face/facecam` (testado com foto de rosto em vídeo sintético; não testado com webcam real) |
 | Recorte de pessoa/fundo (título atrás de você), rastreamento de objetos | falta; exige modelos de visão (segmentação/tracking) |
 | OCR (ler texto na tela e dar nota ao trecho) | tem: `--ocr` (RapidOCR), mas só para texto escrito; kills do Arc Raiders são só visuais, então não servem |
 | Legenda palavra a palavra | tem: `--sub-mode group/word` (testado com fala sintética em inglês; não testado em pt) |

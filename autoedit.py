@@ -59,15 +59,16 @@ def video_encoder(gpu):
     return ["-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-pix_fmt", "yuv420p"]
 
 
-def fit_graph(w, h, square=False):
+def fit_graph(w, h, square=False, tag=""):
     """Encaixa qualquer vídeo/foto em w x h com fundo desfocado (sem barras pretas).
     square=True: recorta o centro em 1:1 antes de encaixar (gameplay maior no Short)."""
     sw, sh = (w // 16) * 2, (h // 16) * 2
     fg_crop = "crop='min(iw,ih)':'min(iw,ih)'," if square else ""
-    return (f"split[a][b];[a]scale={sw}:{sh}:force_original_aspect_ratio=increase,"
-            f"crop={sw}:{sh},boxblur=3:2,scale={w}:{h}[bg];"
-            f"[b]{fg_crop}scale={w}:{h}:force_original_aspect_ratio=decrease[fg];"
-            f"[bg][fg]overlay=(W-w)/2:(H-h)/2")
+    a, b, bg, fg = (f"{n}{tag}" for n in ("a", "b", "bg", "fg"))
+    return (f"split[{a}][{b}];[{a}]scale={sw}:{sh}:force_original_aspect_ratio=increase,"
+            f"crop={sw}:{sh},boxblur=3:2,scale={w}:{h}[{bg}];"
+            f"[{b}]{fg_crop}scale={w}:{h}:force_original_aspect_ratio=decrease[{fg}];"
+            f"[{bg}][{fg}]overlay=(W-w)/2:(H-h)/2")
 
 
 def ts(t):
@@ -333,10 +334,96 @@ def write_edl(clips, path, title):
     Path(path).write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
+# ------------------------------------------------------------ rosto (recorte do Short)
+YUNET_URL = ("https://huggingface.co/opencv/face_detection_yunet/resolve/main/"
+             "face_detection_yunet_2023mar.onnx")
+_FACE = {}
+
+
+def face_detector():
+    """YuNet (OpenCV, ~230 KB, baixado uma vez para ~/.cache/autoedit). O OpenCV 5 não traz mais o Haar."""
+    if "det" not in _FACE:
+        import cv2
+        import urllib.request
+        model = Path.home() / ".cache" / "autoedit" / "face_detection_yunet_2023mar.onnx"
+        if not model.exists():
+            model.parent.mkdir(parents=True, exist_ok=True)
+            print("  baixando o modelo de rosto (YuNet, ~230 KB)...")
+            urllib.request.urlretrieve(YUNET_URL, model)
+        _FACE["det"] = cv2.FaceDetectorYN.create(str(model), "", (320, 320), 0.7, 0.3, 50)
+    return _FACE["det"]
+
+
+def face_track(src, s, e, step=0.5, min_found=0.3):
+    """Procura o rosto a cada 'step' s. Devolve [(t, cx, cy, largura)] (frações da imagem, t relativo a s)
+    ou None se o rosto aparece em menos de 'min_found' das amostras (ex.: gameplay sem webcam)."""
+    import cv2
+    det = face_detector()
+    cap = cv2.VideoCapture(str(src))
+    pts, n = [], 0
+    t = s + step / 2
+    while t < e:
+        n += 1
+        cap.set(cv2.CAP_PROP_POS_MSEC, t * 1000)
+        ok, f = cap.read()
+        if ok:
+            fh, fw = f.shape[:2]
+            sc = 640 / fw if fw > 640 else 1.0
+            small = cv2.resize(f, (int(fw * sc), int(fh * sc))) if sc != 1.0 else f
+            det.setInputSize((small.shape[1], small.shape[0]))
+            _, faces = det.detect(small)
+            if faces is not None and len(faces):
+                x, y, bw, bh = max(faces, key=lambda r: r[2] * r[3])[:4]  # o maior rosto
+                W, Hh = small.shape[1], small.shape[0]
+                pts.append((t - s, (x + bw / 2) / W, (y + bh / 2) / Hh, bw / W))
+        t += step
+    cap.release()
+    return pts if n and len(pts) / n >= min_found else None
+
+
+def smooth_track(pts, dur, step=0.5):
+    """Preenche as falhas por interpolação, suaviza (média móvel de 3) e, se o rosto mal se mexe,
+    trava numa posição só (evita tremida). Devolve [(t, cx, cy, largura)] em intervalos de 'step'."""
+    ts_ = [p[0] for p in pts]
+    grid = [step / 2 + k * step for k in range(max(1, int(dur / step)))]
+    cols = [np.interp(grid, ts_, [p[i] for p in pts]) for i in (1, 2, 3)]
+    cols = [np.convolve(np.pad(c, 1, mode="edge"), np.ones(3) / 3, mode="valid") for c in cols]
+    if np.ptp(cols[0]) < 0.06:  # quase parado: posição fixa
+        cols = [np.full_like(c, np.median(c)) for c in cols]
+    return list(zip(grid, *cols))
+
+
+def lerp_expr(keys):
+    """[(t, v)] -> expressão do ffmpeg que interpola linearmente entre os pontos (fora da faixa, segura o valor)."""
+    if len(keys) == 1:
+        return f"{keys[0][1]:.4f}"
+    expr = f"{keys[-1][1]:.4f}"
+    for (t0, v0), (t1, v1) in reversed(list(zip(keys, keys[1:]))):
+        expr = (f"if(lt(t,{t1:.3f}),{v0:.4f}+({v1 - v0:.4f})*(t-{t0:.3f})/{max(t1 - t0, 1e-3):.3f},{expr})")
+    return f"if(lt(t,{keys[0][0]:.3f}),{keys[0][1]:.4f},{expr})"
+
+
+def face_graph(w, h, track, mode):
+    """Filtro do Short guiado pelo rosto.
+    face    : recorte 9:16 do vídeo inteiro seguindo o rosto (tela cheia).
+    facecam : webcam (recorte em volta do rosto) em cima + gameplay inteiro embaixo."""
+    if mode == "face":
+        cx = lerp_expr([(t, c) for t, c, *_ in track])
+        return (f"crop=w='min(iw,ih*{w}/{h})':h=ih:x='max(0,min(iw-ow,({cx})*iw-ow/2))':y=0,"
+                f"scale={w}:{h}:force_original_aspect_ratio=increase,crop={w}:{h}")
+    cx, cy, fw = (float(np.median([p[i] for p in track])) for i in (1, 2, 3))
+    top_h = int(h * 0.38) // 2 * 2
+    side = f"min(iw,{3.2 * fw:.4f}*iw)"  # recorte ~3x a largura do rosto, na proporção do painel
+    cw = f"min(iw,min(ih*{w}/{top_h},{side}))"
+    return (f"split[ta][tb];[ta]crop=w='{cw}':h='ow*{top_h}/{w}':"
+            f"x='max(0,min(iw-ow,{cx:.4f}*iw-ow/2))':y='max(0,min(ih-oh,{cy:.4f}*ih-oh/2))',"
+            f"scale={w}:{top_h}[top];[tb]{fit_graph(w, h - top_h, tag='g')}[bot];[top][bot]vstack")
+
+
 # ----------------------------------------------------------------- renderização
-def render_clip(src, s, e, out, has_audio, enc, w, h, cwd, square=False):
+def render_clip(src, s, e, out, has_audio, enc, w, h, cwd, square=False, face=None):
     d = e - s
-    vf = fit_graph(w, h, square) + f",fps={FPS},setsar=1,format=yuv420p"
+    vf = (face if face else fit_graph(w, h, square)) + f",fps={FPS},setsar=1,format=yuv420p"
     cmd = ["ffmpeg", "-y", "-v", "error", "-ss", f"{s:.3f}", "-t", f"{d:.3f}", "-i", src]
     if has_audio:
         af = (f"aresample=48000,afade=t=in:d=0.04,"
@@ -616,8 +703,15 @@ def produce(clips, out, tmp, args, w, h, *, vertical=False, allow_extras=True, t
         if c.get("photo"):
             render_photo(c["photo"], name, args.photo_secs, enc, w, h, work)
         else:
+            fg = None
+            if vertical and args.short_crop in ("face", "facecam"):
+                tr = face_track(c["src"], c["s"], c["e"])
+                if tr:
+                    fg = face_graph(w, h, smooth_track(tr, c["e"] - c["s"]), args.short_crop)
+                else:
+                    print(f"  (sem rosto em {Path(c['src']).name} {c['s']:.0f}-{c['e']:.0f}s: enquadramento normal)")
             render_clip(str(c["src"]), c["s"], c["e"], name, c["has_audio"], enc, w, h, work,
-                        square=vertical and args.short_crop == "square")
+                        square=vertical and args.short_crop == "square", face=fg)
         names.append(name)
     if args.photos_mode and args.photo_transition != "none" and len(names) > 1:
         join_xfade(names, "cut.mp4", args.photo_secs, args.photo_transition,
@@ -716,8 +810,9 @@ def main():
     ap.add_argument("--long-min", type=float, default=180, help="segundos p/ considerar 'grande'")
     ap.add_argument("--intro-video", help="sua própria intro (usa no lugar da gerada)")
     ap.add_argument("--shorts", action="store_true", help="gera também versão vertical (<=58 s)")
-    ap.add_argument("--short-crop", choices=["none", "square"], default="none",
-                    help="Short: 'square' recorta o centro 1:1 (gameplay maior, perde as bordas/HUD)")
+    ap.add_argument("--short-crop", choices=["none", "square", "face", "facecam"], default="none",
+                    help="Short: 'square' recorta o centro 1:1 (gameplay maior, perde as bordas/HUD); 'face' recorta "
+                         "9:16 seguindo o rosto; 'facecam' põe o rosto em cima e o gameplay embaixo")
     ap.add_argument("--min-motion", type=float, default=0.5,
                     help="descarta trechos com movimento < X * mediana (menus/inventário). 0 desliga")
     ap.add_argument("--shorts-only", action="store_true", help="gera só o Short vertical")
