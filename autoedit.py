@@ -218,6 +218,28 @@ def concat(names, out, cwd):
          "-c", "copy", out], cwd=cwd)
 
 
+XFADES = ["fade", "dissolve", "slideleft", "wipeleft", "circleopen", "smoothleft", "zoomin"]
+
+
+def join_xfade(names, out, secs, trans, fade, enc, cwd):
+    """Junta clipes de 'secs' s com transição (xfade) de 'fade' s entre eles. trans='mix' alterna."""
+    fade = min(fade, secs / 2)
+    n = len(names)
+    total = n * secs - (n - 1) * fade
+    cmd = ["ffmpeg", "-y", "-v", "error"]
+    for nm in names:
+        cmd += ["-i", nm]
+    cmd += ["-f", "lavfi", "-t", f"{total:.3f}", "-i", "anullsrc=r=48000:cl=stereo"]
+    fc, prev = [], "0:v"
+    for k in range(1, n):
+        t = XFADES[(k - 1) % len(XFADES)] if trans == "mix" else trans
+        fc.append(f"[{prev}][{k}:v]xfade=transition={t}:duration={fade:g}:"
+                  f"offset={k * (secs - fade):.3f}[v{k}]")
+        prev = f"v{k}"
+    cmd += ["-filter_complex", ";".join(fc), "-map", f"[{prev}]", "-map", f"{n}:a"]
+    run(cmd + enc + AUDIO_ENC + ["-t", f"{total:.3f}", out], cwd=cwd)
+
+
 # ---------------------------------------------------------------------- legendas
 def transcribe(video, model_name, lang):
     from faster_whisper import WhisperModel
@@ -384,7 +406,11 @@ def produce(clips, out, tmp, args, w, h, *, vertical=False, allow_extras=True, t
             render_clip(str(c["src"]), c["s"], c["e"], name, c["has_audio"], enc, w, h, work,
                         square=vertical and args.short_crop == "square")
         names.append(name)
-    concat(names, "cut.mp4", work)
+    if args.photos_mode and args.photo_transition != "none" and len(names) > 1:
+        join_xfade(names, "cut.mp4", args.photo_secs, args.photo_transition,
+                   args.transition_secs, enc, work)
+    else:
+        concat(names, "cut.mp4", work)
     cut_dur, _ = probe(work / "cut.mp4")
 
     segs = []
@@ -468,6 +494,9 @@ def main():
                     help="descarta trechos com movimento < X * mediana (menus/inventário). 0 desliga")
     ap.add_argument("--shorts-only", action="store_true", help="gera só o Short vertical")
     ap.add_argument("--photo-secs", type=float, default=3.5)
+    ap.add_argument("--photo-transition", choices=["none", "mix"] + XFADES, default="none",
+                    help="slideshow: transição entre fotos (none = corte seco; mix = alterna)")
+    ap.add_argument("--transition-secs", type=float, default=0.6, help="duração da transição (padrão 0,6 s)")
     ap.add_argument("--gpu", action="store_true", help="usar NVENC (placa NVIDIA)")
     ap.add_argument("--font", help="arquivo .ttf para títulos")
     ap.add_argument("--plan-only", action="store_true", help="só mostra/salva os trechos")
