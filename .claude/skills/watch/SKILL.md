@@ -46,4 +46,7 @@ Relacione com o `autoedit.py` (pipeline único em Python + FFmpeg; veja README).
 Mostre a lista ao usuário **antes de codar**. Depois implemente uma por commit, seguindo as convenções do projeto
 (argparse + tabela do README, testes com `scripts/make_test_footage.sh`, conferir com ffprobe/frames).
 
+Depois de editar um vídeo, **revise o resultado** com `python scripts/qa_video.py arquivo_final.mp4` (e olhe as
+`folha_NN.jpg` geradas) antes de dizer que está pronto.
+
 Nunca commite `dossie_*`, vídeos nem `autoedit_out/`.

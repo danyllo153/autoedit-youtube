@@ -39,6 +39,13 @@ miniaturas) e a análise é feita em cima dele. Detalhes e passo a passo em `.cl
   usuário no claude.ai, não vem no repositório. Não tente contornar o bloqueio do YouTube.
 - O vigia só funciona com o PC ligado; `fila\_status.log` mostra se está vivo (atualiza a cada ~30 s).
 
+## Ferramentas do projeto (resumo)
+- `autoedit.py`: pipeline principal. Modos: melhores momentos (cenas + pontuação), `--cut-silences` (gravação falada + EDL),
+  fotos (slideshow com `--photo-transition`), `--shorts`/`--shorts-only`. `--lufs` ajusta o volume final.
+- `scripts/qa_video.py`: revisão do vídeo FINAL (LUFS/pico, silêncios, telas pretas, quadros, fala x roteiro). Rode antes de entregar.
+- `scripts/watch_video.py` / `watch_fila.py`: dossiê de um vídeo de referência (skill `watch`).
+- Mapa do que o vídeo de referência cita e ainda falta (rosto, OCR, Pexels, TTS...): seção "Mapa" do README.
+
 ## Armadilhas já encontradas
 - `av` 17+ quebra o `faster-whisper` (`metadata_errors`): manter `av<17` no `requirements.txt`.
 - Whisper com `device="auto"` tenta a GPU NVIDIA e falha sem `cublas64_12.dll`: o código já recarrega na CPU.
@@ -50,4 +57,4 @@ miniaturas) e a análise é feita em cima dele. Detalhes e passo a passo em `.cl
 ## Limitações conhecidas (candidatas a melhorias)
 - A pontuação não entende o jogo (kill, vitória, "Well Played"); só áudio e movimento.
 - Legenda depende do download do modelo Whisper.
-- Slideshow sem transições.
+- Slideshow: transições só com `--photo-transition` (padrão é corte seco).

@@ -25,6 +25,12 @@ python autoedit.py fotos/ --music musicas/ --photo-secs 3.5
 
 # Só ver quais trechos seriam escolhidos (não renderiza)
 python autoedit.py gameplay.mp4 --plan-only
+
+# Gravação falada: tira os silêncios e salva a lista de cortes (EDL) para abrir no Resolve/Premiere
+python autoedit.py gravacao.mp4 --cut-silences --subs --lang pt
+
+# Slideshow com transição entre as fotos
+python autoedit.py fotos/ --photo-transition mix --transition-secs 0.6
 ```
 
 Saída (pasta `autoedit_out/`): `*_final.mp4`, `*_miniatura.jpg` (só vídeo grande),
@@ -44,6 +50,13 @@ Saída (pasta `autoedit_out/`): `*_final.mp4`, `*_miniatura.jpg` (só vídeo gra
 | `--shorts-only` | gera só o Short vertical |
 | `--short-crop square` | Short: recorta o centro 1:1 (gameplay maior; perde bordas/HUD) |
 | `--min-motion X` | descarta trechos parados (menus/inventário) abaixo de X × mediana de movimento (padrão 0.5) |
+| `--lufs X` | volume final em LUFS (padrão -16; o YouTube costuma normalizar perto de -14) |
+| `--cut-silences` | gravação falada: corta os silêncios e salva `*.edl` (ignora `--target` e a pontuação por cenas) |
+| `--silence-db X` | abaixo de X dB é silêncio (padrão -35; com ruído de fundo alto use -30) |
+| `--min-silence S` | só corta silêncios com pelo menos S segundos (padrão 0,6) |
+| `--pad S` | folga mantida em volta da fala (padrão 0,15 s) |
+| `--photo-transition T` | slideshow: `none` (corte seco, padrão), `fade`, `dissolve`, `slideleft`, `wipeleft`, `circleopen`, `smoothleft`, `zoomin` ou `mix` |
+| `--transition-secs S` | duração da transição entre fotos (padrão 0,6 s) |
 | `--gpu` | exporta com NVENC (placa NVIDIA) |
 
 ## Como escolhe os trechos
@@ -116,8 +129,36 @@ Formato do `.txt` (uma entrada por linha): o link, ou o nome de um vídeo já pr
 `fila\_status.log` (mostra se o vigia está vivo). Aceita as mesmas opções de `watch_video.py` (`--whisper-model`...),
 mais `--intervalo S` (padrão 30). O PC precisa estar ligado e sem suspender; senão o pedido espera na fila.
 
+## Revisar o vídeo final (`scripts/qa_video.py`)
+Antes de publicar, confira o resultado de verdade, como no vídeo de referência ("o modelo assistiu ao próprio vídeo"):
+```bash
+python scripts/qa_video.py autoedit_out/meu_final.mp4                       # volume, silêncios, telas pretas, quadros
+python scripts/qa_video.py final.mp4 --roteiro roteiro.txt --lang pt        # compara a fala do áudio final com o texto esperado
+```
+Gera `autoedit_out/qa_<video>/qa_report.md` com avisos, `folha_NN.jpg` (grades de quadros com horário, para olhar se
+algum texto cobriu algo) e a transcrição do áudio final. Opções: `--lufs-alvo` (padrão -16), `--max-silencio` (padrão 3 s),
+`--frames` (padrão 12), `--whisper-model`, `--lang`, `--no-transcribe`, `--out`.
+
+## Mapa: técnicas do vídeo de referência x este projeto
+Fonte: vídeo "Claude cria e edita vídeo com um único prompt" (analisado com a skill `watch`).
+| Técnica citada | Situação |
+|---|---|
+| Ducking, loudness nos padrões das plataformas | tem (`--lufs` ajusta o alvo) |
+| Legendas a partir da transcrição | tem (por trecho; falta palavra a palavra) |
+| Revisão do vídeo final (quadros, volume, roteiro) | tem: `scripts/qa_video.py` |
+| Cortar gravação falada, tirar silêncios, EDL | tem: `--cut-silences` (não remove "erros" de fala, só silêncio) |
+| Easing e transições | tem no slideshow (`--photo-transition`, zoom suave) |
+| Detecção de rosto (recorte do Short seguindo o rosto) | falta; viável com OpenCV, precisa de gravação com rosto para testar |
+| Recorte de pessoa/fundo (título atrás de você), rastreamento de objetos | falta; exige modelos de visão (segmentação/tracking) |
+| OCR (achar "VICTORY", kills etc. na tela e dar nota ao trecho) | falta; resolve a limitação "não entende o jogo"; exige Tesseract ou RapidOCR |
+| Legenda palavra a palavra / cortes em cima de palavras | falta; viável com `word_timestamps` do Whisper |
+| Animação por código (Remotion, HyperFrames, GSAP, Three.js: navegador sem janela + FFmpEG) | falta; stack JS/Chromium |
+| Vídeos de apoio (Pexels API) + acerto de cor | falta; precisa de chave da API (gratuita) |
+| Voz (ElevenLabs), avatar (HeyGen), efeitos sonoros e trilha por texto | falta; serviços pagos com conta/chave |
+Chaves e contas nunca entram no repositório.
+
 ## Limitações conhecidas
 - A nota dos trechos usa só áudio + movimento; não "entende" o jogo (kills, vitória).
 - Legendas dependem do modelo Whisper (`--whisper-model small` por padrão; `medium` é mais preciso).
 - `watch` vê só a transcrição e quadros espaçados, não o vídeo inteiro.
-- Fotos viram slideshow com cortes secos (sem transição).
+- Fotos viram slideshow com cortes secos por padrão (use `--photo-transition`).
