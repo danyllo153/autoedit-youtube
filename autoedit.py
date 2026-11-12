@@ -17,6 +17,7 @@ Requisitos: ffmpeg no PATH, e  pip install scenedetect[opencv] faster-whisper pi
 import argparse
 import json
 import math
+import os
 import random
 import re
 import shutil
@@ -421,18 +422,156 @@ def face_graph(w, h, track, mode):
 
 
 # ----------------------------------------------------------------- renderização
-def render_clip(src, s, e, out, has_audio, enc, w, h, cwd, square=False, face=None):
+def render_clip(src, s, e, out, has_audio, enc, w, h, cwd, square=False, face=None, broll=None):
+    """broll = (arquivo, início, duração, filtro_de_cor): cobre a imagem a partir de 'início' s do trecho,
+    mantendo o áudio original (corte de cobertura, como em vídeo falado)."""
     d = e - s
-    vf = (face if face else fit_graph(w, h, square)) + f",fps={FPS},setsar=1,format=yuv420p"
+    base = (face if face else fit_graph(w, h, square)) + f",fps={FPS},setsar=1,format=yuv420p"
     cmd = ["ffmpeg", "-y", "-v", "error", "-ss", f"{s:.3f}", "-t", f"{d:.3f}", "-i", src]
+    n_in = 1
+    if broll:
+        bpath, b0, bd, grade = broll
+        cmd += ["-t", f"{bd:.3f}", "-i", bpath]
+        n_in = 2
+        fc = (f"[0:v]{base}[m];[1:v]scale={w}:{h}:force_original_aspect_ratio=increase,crop={w}:{h},"
+              f"fps={FPS},setsar=1{grade},format=yuv420p,setpts=PTS+{b0:.3f}/TB[br];"
+              f"[m][br]overlay=enable='between(t,{b0:.3f},{b0 + bd:.3f})':eof_action=pass,format=yuv420p[v]")
+        vopt, vmap = ["-filter_complex", fc], "[v]"
+    else:
+        vopt, vmap = ["-vf", base], "0:v:0"
     if has_audio:
         af = (f"aresample=48000,afade=t=in:d=0.04,"
               f"afade=t=out:st={max(d - 0.04, 0):.3f}:d=0.04")
-        cmd += ["-vf", vf, "-af", af]
+        cmd += vopt + ["-af", af, "-map", vmap, "-map", "0:a:0"]
     else:
-        cmd += ["-f", "lavfi", "-t", f"{d:.3f}", "-i", "anullsrc=r=48000:cl=stereo",
-                "-vf", vf, "-map", "0:v:0", "-map", "1:a:0"]
+        cmd += ["-f", "lavfi", "-t", f"{d:.3f}", "-i", "anullsrc=r=48000:cl=stereo"]
+        cmd += vopt + ["-map", vmap, "-map", f"{n_in}:a:0"]
     run(cmd + enc + AUDIO_ENC + ["-t", f"{d:.3f}", out], cwd=cwd)
+
+
+# ------------------------------------------------- vídeos de apoio (Pexels) + acerto de cor
+PEXELS_API = "https://api.pexels.com"
+
+
+def pexels_key(args):
+    return args.pexels_key or os.environ.get("PEXELS_API_KEY", "")
+
+
+def _http_json(url, key):
+    import urllib.request
+    req = urllib.request.Request(url, headers={"Authorization": key, "User-Agent": "autoedit"})
+    with urllib.request.urlopen(req, timeout=30) as r:
+        return json.loads(r.read().decode("utf-8"))
+
+
+def pexels_find(query, key, orientation, min_secs, per_page=15):
+    """Busca vídeos no Pexels (API gratuita, chave em pexels.com/api). Devolve
+    [{id, url, user, duration, file}] já com o melhor arquivo (<= 1080p, mp4) de cada um."""
+    import urllib.parse
+    base = os.environ.get("PEXELS_API_BASE", PEXELS_API)  # só para testes locais
+    q = urllib.parse.urlencode({"query": query, "orientation": orientation, "per_page": per_page,
+                                "size": "medium"})
+    try:
+        data = _http_json(f"{base}/videos/search?{q}", key)
+    except Exception as exc:  # noqa: BLE001
+        print(f"  ! Pexels falhou para '{query}': {exc}")
+        return []
+    out = []
+    for v in data.get("videos", []):
+        if v.get("duration", 0) < min_secs:
+            continue
+        files = [f for f in v.get("video_files", []) if f.get("file_type") == "video/mp4" and f.get("link")]
+        files = [f for f in files if (f.get("height") or 0) <= 1080 or (f.get("width") or 0) <= 1080]
+        if not files:
+            continue
+        best = max(files, key=lambda f: (f.get("width") or 0) * (f.get("height") or 0))
+        out.append({"id": v["id"], "url": v.get("url", ""), "user": (v.get("user") or {}).get("name", ""),
+                    "duration": v["duration"], "file": best["link"]})
+    return out
+
+
+def pexels_download(item):
+    import urllib.request
+    d = Path.home() / ".cache" / "autoedit" / "pexels"
+    d.mkdir(parents=True, exist_ok=True)
+    dest = d / f"{item['id']}.mp4"
+    if not dest.exists():
+        tmpf = dest.with_suffix(".part")
+        urllib.request.urlretrieve(item["file"], tmpf)
+        tmpf.replace(dest)
+    return dest
+
+
+def frame_stats(img_bgr):
+    """média e desvio por canal (R, G, B)."""
+    rgb = img_bgr[..., ::-1].reshape(-1, 3).astype(np.float64)
+    return rgb.mean(0), rgb.std(0) + 1e-6
+
+
+def video_frame(path, t):
+    import cv2
+    cap = cv2.VideoCapture(str(path))
+    cap.set(cv2.CAP_PROP_POS_MSEC, t * 1000)
+    ok, f = cap.read()
+    cap.release()
+    return f if ok else None
+
+
+def color_match(host_frame, broll_frame, strength=0.7):
+    """Filtro lutrgb que aproxima a cor do b-roll da do vídeo principal (média/contraste por canal)."""
+    if host_frame is None or broll_frame is None:
+        return ""
+    ma, sa = frame_stats(host_frame)
+    mb, sb = frame_stats(broll_frame)
+    parts = []
+    for ch, a_m, a_s, b_m, b_s in zip("rgb", ma, sa, mb, sb):
+        gain = 1 + strength * (min(max(a_s / b_s, 0.6), 1.6) - 1)
+        target = b_m + strength * (a_m - b_m)
+        parts.append(f"{ch}='clip((val-{b_m:.1f})*{gain:.3f}+{target:.1f},0,255)'")
+    return ",lutrgb=" + ":".join(parts)
+
+
+def plan_broll(clips, args, vertical):
+    """Escolhe quais trechos recebem b-roll: um a cada --broll-every s de vídeo montado.
+    Devolve {índice_do_trecho: (arquivo, início, duração, filtro_de_cor)} e a lista de créditos."""
+    key = pexels_key(args)
+    if not args.broll or args.photos_mode:
+        return {}, []
+    if not key:
+        print("  ! --broll pede uma chave do Pexels (gratuita): --pexels-key ou variável PEXELS_API_KEY")
+        return {}, []
+    queries = [q.strip() for q in args.broll.split(",") if q.strip()]
+    orient = "portrait" if vertical else "landscape"
+    pool = {q: pexels_find(q, key, orient, args.broll_secs) for q in queries}
+    if not any(pool.values()):
+        print("  ! nenhum vídeo do Pexels encontrado; seguindo sem b-roll")
+        return {}, []
+    plan, credits, acc, nxt, qi = {}, [], 0.0, args.broll_every, 0
+    for i, c in enumerate(clips):
+        d = c["e"] - c["s"]
+        if c.get("photo") or acc < nxt or d < args.broll_secs + 1.0:
+            acc += d
+            continue
+        q = queries[qi % len(queries)]
+        qi += 1
+        if not pool[q]:
+            acc += d
+            continue
+        item = pool[q][(qi - 1) // len(queries) % len(pool[q])]
+        try:
+            path = pexels_download(item)
+        except Exception as exc:  # noqa: BLE001
+            print(f"  ! download do Pexels falhou ({exc})")
+            acc += d
+            continue
+        grade = ""
+        if args.broll_color:
+            grade = color_match(video_frame(c["src"], (c["s"] + c["e"]) / 2), video_frame(path, 1.0))
+        plan[i] = (str(path), 0.5, min(args.broll_secs, d - 1.0), grade)
+        credits.append(f"{item['url']}  (autor: {item['user']})")
+        nxt = acc + d + args.broll_every
+        acc += d
+    return plan, credits
 
 
 def render_photo(img, out, secs, enc, w, h, cwd):
@@ -698,6 +837,12 @@ def produce(clips, out, tmp, args, w, h, *, vertical=False, allow_extras=True, t
     work = Path(tmp) / ("short" if vertical else "main")
     work.mkdir(exist_ok=True)
     names = []
+    brolls, credits = plan_broll(clips, args, vertical)
+    if brolls:
+        print(f"  b-roll do Pexels em {len(brolls)} trechos" + (" (cor ajustada)" if args.broll_color else ""))
+        (Path(args.out) / "creditos_pexels.txt").write_text(
+            "Vídeos de apoio: Pexels (pexels.com), licença gratuita; citar é opcional, mas é gentil.\n"
+            + "\n".join(sorted(set(credits))) + "\n", encoding="utf-8")
     for i, c in enumerate(clips):
         name = f"c{i:04d}.mp4"
         if c.get("photo"):
@@ -711,7 +856,7 @@ def produce(clips, out, tmp, args, w, h, *, vertical=False, allow_extras=True, t
                 else:
                     print(f"  (sem rosto em {Path(c['src']).name} {c['s']:.0f}-{c['e']:.0f}s: enquadramento normal)")
             render_clip(str(c["src"]), c["s"], c["e"], name, c["has_audio"], enc, w, h, work,
-                        square=vertical and args.short_crop == "square", face=fg)
+                        square=vertical and args.short_crop == "square", face=fg, broll=brolls.get(i))
         names.append(name)
     if args.photos_mode and args.photo_transition != "none" and len(names) > 1:
         join_xfade(names, "cut.mp4", args.photo_secs, args.photo_transition,
@@ -835,6 +980,12 @@ def main():
                     help="abaixo de X dB conta como silêncio (padrão -35; ruído de fundo alto: use -30)")
     ap.add_argument("--min-silence", type=float, default=0.6, help="só corta silêncios >= X s (padrão 0,6)")
     ap.add_argument("--pad", type=float, default=0.15, help="folga mantida em volta da fala, em s (padrão 0,15)")
+    ap.add_argument("--broll", help='vídeos de apoio do Pexels, ex.: "city night,explosion" (precisa da chave)')
+    ap.add_argument("--pexels-key", help="chave da API do Pexels (ou variável PEXELS_API_KEY). Nunca vai para o repositório")
+    ap.add_argument("--broll-every", type=float, default=25, help="1 b-roll a cada X s de vídeo (padrão 25)")
+    ap.add_argument("--broll-secs", type=float, default=4, help="duração de cada b-roll (padrão 4 s)")
+    ap.add_argument("--broll-color", choices=["on", "off"], default="on",
+                    help="ajusta a cor do b-roll para a do vídeo (padrão on)")
     ap.add_argument("--photo-secs", type=float, default=3.5)
     ap.add_argument("--photo-transition", choices=["none", "mix"] + XFADES, default="none",
                     help="slideshow: transição entre fotos (none = corte seco; mix = alterna)")
@@ -843,6 +994,7 @@ def main():
     ap.add_argument("--font", help="arquivo .ttf para títulos")
     ap.add_argument("--plan-only", action="store_true", help="só mostra/salva os trechos")
     args = ap.parse_args()
+    args.broll_color = args.broll_color == "on"
 
     if not shutil.which("ffmpeg"):
         sys.exit("ffmpeg não encontrado no PATH.")

@@ -70,6 +70,10 @@ Saída (pasta `autoedit_out/`): `*_final.mp4`, `*_miniatura.jpg` (só vídeo gra
 | `--pad S` | folga mantida em volta da fala (padrão 0,15 s) |
 | `--photo-transition T` | slideshow: `none` (corte seco, padrão), `fade`, `dissolve`, `slideleft`, `wipeleft`, `circleopen`, `smoothleft`, `zoomin` ou `mix` |
 | `--transition-secs S` | duração da transição entre fotos (padrão 0,6 s) |
+| `--broll "a,b"` | vídeos de apoio do Pexels (gratuito) como corte de cobertura: cobrem a imagem e mantêm o áudio original. Precisa de chave (abaixo) |
+| `--pexels-key CHAVE` | chave da API; ou deixe na variável de ambiente `PEXELS_API_KEY` (não vai para o repositório) |
+| `--broll-every S` / `--broll-secs S` | 1 b-roll a cada S s de vídeo (padrão 25) e duração de cada um (padrão 4 s) |
+| `--broll-color on/off` | ajusta média e contraste de cada canal de cor do b-roll para o vídeo principal (padrão on) |
 | `--gpu` | exporta com NVENC (placa NVIDIA) |
 
 ## OCR: textos escritos na tela (`--ocr`)
@@ -86,6 +90,14 @@ sempre no mesmo canto, `--ocr-region` deixa a leitura mais rápida e evita falso
 Custo: cerca de 0,2 s por quadro lido na CPU (medido em 1280x720). Com o padrão (1 quadro a cada 1,5 s), uma hora de
 gameplay leva alguns minutos a mais na pontuação. Limites: letras pequenas, fundo muito poluído ou fontes
 estilizadas podem não ser lidas; `--ocr-region` com a área do aviso e `--ocr-every` menor ajudam.
+
+## Vídeos de apoio do Pexels (`--broll`)
+1. Crie uma conta gratuita em pexels.com e peça a chave em pexels.com/api.
+2. Guarde a chave fora do repositório: `setx PEXELS_API_KEY "sua_chave"` (Windows, vale em janelas novas) ou `export PEXELS_API_KEY=...`.
+3. `python autoedit.py gravacao.mp4 --cut-silences --subs --broll "city night,keyboard typing" --broll-every 20`
+Os vídeos baixados ficam em `~/.cache/autoedit/pexels`; os créditos vão para `creditos_pexels.txt` na pasta de saída.
+A licença do Pexels permite uso comercial sem citar o autor (citar é opcional). O limite gratuito da API é de 200 pedidos/hora
+e 20 000/mês (valor informado pelo Pexels; confira na sua conta).
 
 ## Como escolhe os trechos
 Cada cena (PySceneDetect) é pontuada por energia do áudio e movimento da imagem; cenas longas
@@ -182,7 +194,7 @@ Fonte: vídeo "Claude cria e edita vídeo com um único prompt" (analisado com a
 | Legenda palavra a palavra | tem: `--sub-mode group/word` (testado com fala sintética em inglês; não testado em pt) |
 | Cortes em cima de palavras | falta |
 | Animação por código (Remotion, HyperFrames, GSAP, Three.js: navegador sem janela + FFmpEG) | falta; stack JS/Chromium |
-| Vídeos de apoio (Pexels API) + acerto de cor | falta; precisa de chave da API (gratuita) |
+| Vídeos de apoio (Pexels API) + acerto de cor | tem: `--broll` (testado só contra um servidor de mentira local; falta rodar com a sua chave real) |
 | Voz (ElevenLabs), avatar (HeyGen), efeitos sonoros e trilha por texto | falta; serviços pagos com conta/chave |
 Chaves e contas nunca entram no repositório.
 
