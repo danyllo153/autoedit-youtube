@@ -347,7 +347,7 @@ def make_intro_card(frame_bgr, title, channel, out, w, h, font_path):
 
 
 # ------------------------------------------------------------------- montagem final
-def final_pass(video, out, dur, music, music_vol, srt, sub_style, enc, cwd):
+def final_pass(video, out, dur, music, music_vol, srt, sub_style, enc, cwd, lufs=-16.0):
     cmd = ["ffmpeg", "-y", "-v", "error", "-i", video]
     if music:
         cmd += ["-stream_loop", "-1", "-i", music]
@@ -355,7 +355,7 @@ def final_pass(video, out, dur, music, music_vol, srt, sub_style, enc, cwd):
     if srt:
         fc.append(f"[0:v]subtitles={srt}:force_style='{sub_style}'[v]")
         vmap = "[v]"
-    norm = "loudnorm=I=-16:TP=-1.5:LRA=11,aresample=48000"
+    norm = f"loudnorm=I={lufs:g}:TP=-1.5:LRA=11,aresample=48000"
     if music:
         fc += [f"[1:a]volume={music_vol},atrim=0:{dur:.3f},asetpts=PTS-STARTPTS,"
                f"afade=t=out:st={max(dur - 3, 0):.3f}:d=3[m]",
@@ -423,7 +423,7 @@ def produce(clips, out, tmp, args, w, h, *, vertical=False, allow_extras=True, t
              if vertical else
              "FontName=Arial,FontSize=14,Bold=1,Outline=2.5,Shadow=0,MarginV=45,Alignment=2")
     final_pass(base, str(Path(out).resolve()), total, args.music, args.music_vol,
-               srt, style, enc, work)
+               srt, style, enc, work, args.lufs)
     return thumb_frame, total, is_long
 
 
@@ -451,6 +451,8 @@ def main():
                     help="peso do áudio (0-1) vs movimento na escolha dos trechos")
     ap.add_argument("--music", help="arquivo de música (ou pasta: sorteia uma)")
     ap.add_argument("--music-vol", type=float, default=0.22)
+    ap.add_argument("--lufs", type=float, default=-16.0,
+                    help="volume final em LUFS (padrão -16; YouTube costuma normalizar perto de -14)")
     ap.add_argument("--subs", action="store_true", help="legendas automáticas (Whisper)")
     ap.add_argument("--lang", default=None, help="idioma da fala, ex.: pt (padrão: auto)")
     ap.add_argument("--whisper-model", default="small")
