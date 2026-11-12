@@ -453,13 +453,54 @@ def render_clip(src, s, e, out, has_audio, enc, w, h, cwd, square=False, face=No
 PEXELS_API = "https://api.pexels.com"
 
 
-def pexels_key(args):
-    return args.pexels_key or os.environ.get("PEXELS_API_KEY", "")
+PIXABAY_API = "https://pixabay.com"
+
+
+def broll_source(args):
+    """(fonte, chave): --broll-fonte pexels|pixabay, ou 'auto' = a que tiver chave (Pexels primeiro)."""
+    keys = {"pexels": args.pexels_key or os.environ.get("PEXELS_API_KEY", ""),
+            "pixabay": args.pixabay_key or os.environ.get("PIXABAY_API_KEY", "")}
+    if args.broll_fonte != "auto":
+        return args.broll_fonte, keys[args.broll_fonte]
+    for name in ("pexels", "pixabay"):
+        if keys[name]:
+            return name, keys[name]
+    return "pexels", ""
+
+
+def pixabay_find(query, key, orientation, min_secs, per_page=20):
+    """Busca vídeos no Pixabay (API gratuita; chave na sua conta em pixabay.com/api/docs). Mesmo formato do pexels_find."""
+    import urllib.parse
+    base = os.environ.get("PIXABAY_API_BASE", PIXABAY_API)  # só para testes locais
+    q = urllib.parse.urlencode({"key": key, "q": query, "per_page": per_page, "safesearch": "true"})
+    try:
+        data = _http_json(f"{base}/api/videos/?{q}", None)
+    except Exception as exc:  # noqa: BLE001
+        print(f"  ! Pixabay falhou para '{query}': {str(exc).replace(key, '***')}")
+        return []
+    out = []
+    for v in data.get("hits", []):
+        if v.get("duration", 0) < min_secs:
+            continue
+        files = [f for f in (v.get("videos") or {}).values() if f.get("url")]
+        files = [f for f in files if (f.get("height") or 0) <= 1080 or (f.get("width") or 0) <= 1080]
+        if not files:
+            continue
+        best = max(files, key=lambda f: (f.get("width") or 0) * (f.get("height") or 0))
+        out.append({"id": f"pixabay_{v['id']}", "url": v.get("pageURL", ""), "user": v.get("user", ""),
+                    "duration": v["duration"], "file": best["url"],
+                    "portrait": (best.get("height") or 0) > (best.get("width") or 0)})
+    want = orientation == "portrait"
+    same = [o for o in out if o["portrait"] == want]  # a API não filtra orientação: filtramos aqui
+    return same or out
 
 
 def _http_json(url, key):
     import urllib.request
-    req = urllib.request.Request(url, headers={"Authorization": key, "User-Agent": "autoedit"})
+    headers = {"User-Agent": "autoedit"}
+    if key:  # Pexels manda a chave no cabeçalho; o Pixabay, na URL
+        headers["Authorization"] = key
+    req = urllib.request.Request(url, headers=headers)
     with urllib.request.urlopen(req, timeout=30) as r:
         return json.loads(r.read().decode("utf-8"))
 
@@ -485,16 +526,16 @@ def pexels_find(query, key, orientation, min_secs, per_page=15):
         if not files:
             continue
         best = max(files, key=lambda f: (f.get("width") or 0) * (f.get("height") or 0))
-        out.append({"id": v["id"], "url": v.get("url", ""), "user": (v.get("user") or {}).get("name", ""),
+        out.append({"id": f"pexels_{v['id']}", "url": v.get("url", ""), "user": (v.get("user") or {}).get("name", ""),
                     "duration": v["duration"], "file": best["link"]})
     return out
 
 
 def pexels_download(item):
     import urllib.request
-    d = Path.home() / ".cache" / "autoedit" / "pexels"
+    d = Path.home() / ".cache" / "autoedit" / "broll"
     d.mkdir(parents=True, exist_ok=True)
-    dest = d / f"{item['id']}.mp4"
+    dest = d / f"{item['id']}.mp4"  # o id já leva o prefixo da fonte
     if not dest.exists():
         tmpf = dest.with_suffix(".part")
         urllib.request.urlretrieve(item["file"], tmpf)
@@ -533,19 +574,22 @@ def color_match(host_frame, broll_frame, strength=0.7):
 
 def plan_broll(clips, args, vertical):
     """Escolhe quais trechos recebem b-roll: um a cada --broll-every s de vídeo montado.
-    Devolve {índice_do_trecho: (arquivo, início, duração, filtro_de_cor)} e a lista de créditos."""
-    key = pexels_key(args)
+    Devolve ({índice_do_trecho: (arquivo, início, duração, filtro_de_cor)}, créditos, nome_da_fonte)."""
     if not args.broll or args.photos_mode:
-        return {}, []
+        return {}, [], ""
+    fonte, key = broll_source(args)
     if not key:
-        print("  ! --broll pede uma chave do Pexels (gratuita): --pexels-key ou variável PEXELS_API_KEY")
-        return {}, []
+        print("  ! --broll pede uma chave gratuita: Pexels (--pexels-key / PEXELS_API_KEY) "
+              "ou Pixabay (--pixabay-key / PIXABAY_API_KEY)")
+        return {}, [], ""
+    nome = fonte.capitalize()
+    achar = pixabay_find if fonte == "pixabay" else pexels_find
     queries = [q.strip() for q in args.broll.split(",") if q.strip()]
     orient = "portrait" if vertical else "landscape"
-    pool = {q: pexels_find(q, key, orient, args.broll_secs) for q in queries}
+    pool = {q: achar(q, key, orient, args.broll_secs) for q in queries}
     if not any(pool.values()):
-        print("  ! nenhum vídeo do Pexels encontrado; seguindo sem b-roll")
-        return {}, []
+        print(f"  ! nenhum vídeo do {nome} encontrado; seguindo sem b-roll")
+        return {}, [], ""
     plan, credits, acc, nxt, qi = {}, [], 0.0, args.broll_every, 0
     for i, c in enumerate(clips):
         d = c["e"] - c["s"]
@@ -561,7 +605,7 @@ def plan_broll(clips, args, vertical):
         try:
             path = pexels_download(item)
         except Exception as exc:  # noqa: BLE001
-            print(f"  ! download do Pexels falhou ({exc})")
+            print(f"  ! download do {nome} falhou ({exc})")
             acc += d
             continue
         grade = ""
@@ -571,7 +615,7 @@ def plan_broll(clips, args, vertical):
         credits.append(f"{item['url']}  (autor: {item['user']})")
         nxt = acc + d + args.broll_every
         acc += d
-    return plan, credits
+    return plan, credits, nome
 
 
 def render_photo(img, out, secs, enc, w, h, cwd):
@@ -837,11 +881,11 @@ def produce(clips, out, tmp, args, w, h, *, vertical=False, allow_extras=True, t
     work = Path(tmp) / ("short" if vertical else "main")
     work.mkdir(exist_ok=True)
     names = []
-    brolls, credits = plan_broll(clips, args, vertical)
+    brolls, credits, fonte = plan_broll(clips, args, vertical)
     if brolls:
-        print(f"  b-roll do Pexels em {len(brolls)} trechos" + (" (cor ajustada)" if args.broll_color else ""))
-        (Path(args.out) / "creditos_pexels.txt").write_text(
-            "Vídeos de apoio: Pexels (pexels.com), licença gratuita; citar é opcional, mas é gentil.\n"
+        print(f"  b-roll do {fonte} em {len(brolls)} trechos" + (" (cor ajustada)" if args.broll_color else ""))
+        (Path(args.out) / "creditos_broll.txt").write_text(
+            f"Vídeos de apoio: {fonte}, licença gratuita (confira os termos atuais do site); citar é gentil.\n"
             + "\n".join(sorted(set(credits))) + "\n", encoding="utf-8")
     for i, c in enumerate(clips):
         name = f"c{i:04d}.mp4"
@@ -980,7 +1024,10 @@ def main():
                     help="abaixo de X dB conta como silêncio (padrão -35; ruído de fundo alto: use -30)")
     ap.add_argument("--min-silence", type=float, default=0.6, help="só corta silêncios >= X s (padrão 0,6)")
     ap.add_argument("--pad", type=float, default=0.15, help="folga mantida em volta da fala, em s (padrão 0,15)")
-    ap.add_argument("--broll", help='vídeos de apoio do Pexels, ex.: "city night,explosion" (precisa da chave)')
+    ap.add_argument("--broll", help='vídeos de apoio (Pexels ou Pixabay), ex.: "city night,explosion" (precisa de chave gratuita)')
+    ap.add_argument("--broll-fonte", choices=["auto", "pexels", "pixabay"], default="auto",
+                    help="de onde buscar (padrão auto: a que tiver chave, Pexels primeiro)")
+    ap.add_argument("--pixabay-key", help="chave da API do Pixabay (ou variável PIXABAY_API_KEY). Nunca vai para o repositório")
     ap.add_argument("--pexels-key", help="chave da API do Pexels (ou variável PEXELS_API_KEY). Nunca vai para o repositório")
     ap.add_argument("--broll-every", type=float, default=25, help="1 b-roll a cada X s de vídeo (padrão 25)")
     ap.add_argument("--broll-secs", type=float, default=4, help="duração de cada b-roll (padrão 4 s)")

@@ -48,8 +48,8 @@ miniaturas) e a análise é feita em cima dele. Detalhes e passo a passo em `.cl
   **No Arc Raiders o abate ao vivo é só visual (sem texto): o OCR não detecta kills lá** (informado pelo usuário: só Call of Duty escreve o abate; o OCR serve para esse tipo de jogo).
   Recortes finos precisam de preenchimento (já feito no código): o detector não lê faixas com menos de ~200 px.
   As palavras padrão são palpites, não conferidos com o jogo.
-- `--sub-mode group/word` (legenda palavra a palavra, ASS), `--short-crop face/facecam` (YuNet), `--broll` (Pexels, chave em
-  `PEXELS_API_KEY`, nunca no repositório): ver README.
+- `--sub-mode group/word` (legenda palavra a palavra, ASS), `--short-crop face/facecam` (YuNet), `--broll` (Pexels ou Pixabay, chaves em
+  `PEXELS_API_KEY`/`PIXABAY_API_KEY`, nunca no repositório; o Pexels pausou chaves novas): ver README.
 - `scripts/pessoa_fundo.py` (título atrás da pessoa / troca de fundo), `scripts/rastrear.py` (rastreio de objeto),
   `scripts/animar_html.py` (animação HTML/GSAP -> vídeo): ver README. Modelos baixam sozinhos para `~/.cache/autoedit`.
 - `scripts/qa_video.py`: revisão do vídeo FINAL (LUFS/pico, silêncios, telas pretas, quadros, fala x roteiro). Rode antes de entregar.

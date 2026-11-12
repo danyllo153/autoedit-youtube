@@ -30,7 +30,7 @@ scripts de setup.
 |---|---|---|
 | Legenda palavra a palavra | `--sub-mode group/word`, `--sub-words`, `--sub-color` (ASS) | fala sintética (espeak-ng) em inglês, Whisper `tiny`; NÃO em pt |
 | Rosto no Short | `--short-crop face/facecam` (YuNet; modelo baixa sozinho) | foto de rosto em vídeo sintético; sem rosto cai no enquadramento normal; NÃO com webcam real |
-| Pexels | `--broll`, `--pexels-key`/`PEXELS_API_KEY`, `--broll-color` | servidor de mentira local (a API real só respondeu 401 sem chave); NÃO com chave real |
+| B-roll Pexels/Pixabay | `--broll`, `--broll-fonte`, `--pexels-key`/`--pixabay-key` (ou env), `--broll-color` | servidor de mentira local para os dois; NÃO com chave real. Pexels pausou chaves novas (12/11/2026): use Pixabay |
 | Pessoa/fundo e rastreio | `scripts/pessoa_fundo.py`, `scripts/rastrear.py` | foto de rosto em vídeo (recorte `humano` bom, `leve` grosseiro); rastreio erro médio ~19 px |
 | Animação HTML | `scripts/animar_html.py` + `scripts/animacoes/*.html` (GSAP) | Chromium da nuvem; NÃO no Windows |
 Ainda pagos/sem implementar: voz (ElevenLabs), avatar (HeyGen), efeitos sonoros/trilha por texto. Cortes em cima de palavras: não feito.

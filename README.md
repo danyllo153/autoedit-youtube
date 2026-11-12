@@ -71,8 +71,9 @@ Saída (pasta `autoedit_out/`): `*_final.mp4`, `*_miniatura.jpg` (só vídeo gra
 | `--pad S` | folga mantida em volta da fala (padrão 0,15 s) |
 | `--photo-transition T` | slideshow: `none` (corte seco, padrão), `fade`, `dissolve`, `slideleft`, `wipeleft`, `circleopen`, `smoothleft`, `zoomin` ou `mix` |
 | `--transition-secs S` | duração da transição entre fotos (padrão 0,6 s) |
-| `--broll "a,b"` | vídeos de apoio do Pexels (gratuito) como corte de cobertura: cobrem a imagem e mantêm o áudio original. Precisa de chave (abaixo) |
-| `--pexels-key CHAVE` | chave da API; ou deixe na variável de ambiente `PEXELS_API_KEY` (não vai para o repositório) |
+| `--broll "a,b"` | vídeos de apoio gratuitos (Pexels ou Pixabay) como corte de cobertura: cobrem a imagem e mantêm o áudio original. Precisa de chave (abaixo) |
+| `--broll-fonte auto/pexels/pixabay` | de onde buscar (padrão `auto`: a que tiver chave, Pexels primeiro) |
+| `--pexels-key` / `--pixabay-key` | chaves das APIs; ou deixe nas variáveis `PEXELS_API_KEY` / `PIXABAY_API_KEY` (não vão para o repositório) |
 | `--broll-every S` / `--broll-secs S` | 1 b-roll a cada S s de vídeo (padrão 25) e duração de cada um (padrão 4 s) |
 | `--broll-color on/off` | ajusta média e contraste de cada canal de cor do b-roll para o vídeo principal (padrão on) |
 | `--gpu` | exporta com NVENC (placa NVIDIA) |
@@ -128,13 +129,16 @@ O recorte pega "o que está em destaque": funciona melhor com uma pessoa sozinha
 4 s de vídeo 720p na CPU (use `--cada 2` para acelerar). O rastreador (VitTrack) perde o objeto se ele sai da tela ou é coberto;
 o JSON marca esses quadros com `perdido: true`.
 
-## Vídeos de apoio do Pexels (`--broll`)
-1. Crie uma conta gratuita em pexels.com e peça a chave em pexels.com/api.
-2. Guarde a chave fora do repositório: `setx PEXELS_API_KEY "sua_chave"` (Windows, vale em janelas novas) ou `export PEXELS_API_KEY=...`.
-3. `python autoedit.py gravacao.mp4 --cut-silences --subs --broll "city night,keyboard typing" --broll-every 20`
-Os vídeos baixados ficam em `~/.cache/autoedit/pexels`; os créditos vão para `creditos_pexels.txt` na pasta de saída.
-A licença do Pexels permite uso comercial sem citar o autor (citar é opcional). O limite gratuito da API é de 200 pedidos/hora
-e 20 000/mês (de memória, não conferido agora; veja os limites atuais na sua conta do Pexels).
+## Vídeos de apoio gratuitos (`--broll`: Pexels ou Pixabay)
+Use a fonte que lhe der chave. **O Pexels pausou a emissão de chaves novas** (visto na página em 12/11/2026): só serve se você já tiver uma.
+- **Pixabay:** crie conta em pixabay.com e procure a chave na documentação da API (pixabay.com/api/docs); ela aparece logada, na hora (de memória, não conferido).
+- **Pexels:** pexels.com/api, quando voltarem a emitir chaves.
+1. Guarde a chave fora do repositório: `setx PIXABAY_API_KEY "sua_chave"` (Windows, vale em janelas novas) ou `export PIXABAY_API_KEY=...`.
+2. `python autoedit.py gravacao.mp4 --cut-silences --subs --broll "city night,keyboard typing" --broll-every 20`
+Os vídeos baixados ficam em `~/.cache/autoedit/broll`; os créditos vão para `creditos_broll.txt` na pasta de saída.
+Os dois sites permitem uso comercial pelas licenças deles (confira os termos atuais antes de monetizar). O Pixabay não filtra orientação:
+no Short o código prefere vídeos verticais e, se não houver, usa os horizontais recortados.
+Limites das APIs (de memória, não conferidos agora; veja na sua conta): Pexels ~200 pedidos/hora; Pixabay ~100 pedidos/minuto.
 
 ## Como escolhe os trechos
 Cada cena (PySceneDetect) é pontuada por energia do áudio e movimento da imagem; cenas longas
@@ -231,7 +235,7 @@ Fonte: vídeo "Claude cria e edita vídeo com um único prompt" (analisado com a
 | Legenda palavra a palavra | tem: `--sub-mode group/word` (testado com fala sintética em inglês; não testado em pt) |
 | Cortes em cima de palavras | falta |
 | Animação por código (Remotion, HyperFrames, GSAP, Three.js: navegador sem janela + FFmpeg) | tem: `scripts/animar_html.py` (GSAP em 2 modelos prontos; Three.js não testado; no Windows não testado) |
-| Vídeos de apoio (Pexels API) + acerto de cor | tem: `--broll` (testado só contra um servidor de mentira local; falta rodar com a sua chave real) |
+| Vídeos de apoio (Pexels/Pixabay) + acerto de cor | tem: `--broll` (testado só contra um servidor de mentira local; falta rodar com chave real; Pexels está sem emitir chaves) |
 | Voz (ElevenLabs), avatar (HeyGen), efeitos sonoros e trilha por texto | falta; serviços pagos com conta/chave |
 Chaves e contas nunca entram no repositório.
 
