@@ -48,6 +48,10 @@ miniaturas) e a análise é feita em cima dele. Detalhes e passo a passo em `.cl
   **No Arc Raiders o abate ao vivo é só visual (sem texto): o OCR não detecta kills lá** (informado pelo usuário: só Call of Duty escreve o abate; o OCR serve para esse tipo de jogo).
   Recortes finos precisam de preenchimento (já feito no código): o detector não lê faixas com menos de ~200 px.
   As palavras padrão são palpites, não conferidos com o jogo.
+- `--sub-mode group/word` (legenda palavra a palavra, ASS), `--short-crop face/facecam` (YuNet), `--broll` (Pexels, chave em
+  `PEXELS_API_KEY`, nunca no repositório): ver README.
+- `scripts/pessoa_fundo.py` (título atrás da pessoa / troca de fundo), `scripts/rastrear.py` (rastreio de objeto),
+  `scripts/animar_html.py` (animação HTML/GSAP -> vídeo): ver README. Modelos baixam sozinhos para `~/.cache/autoedit`.
 - `scripts/qa_video.py`: revisão do vídeo FINAL (LUFS/pico, silêncios, telas pretas, quadros, fala x roteiro). Rode antes de entregar.
 - `scripts/watch_video.py` / `watch_fila.py`: dossiê de um vídeo de referência (skill `watch`).
 - Mapa do que o vídeo de referência cita e ainda falta (rosto, OCR, Pexels, TTS...): seção "Mapa" do README.
@@ -59,6 +63,8 @@ miniaturas) e a análise é feita em cima dele. Detalhes e passo a passo em `.cl
 - Windows: `winget` só atualiza o PATH em janela nova do PowerShell (ou recarregar `$env:Path`).
 - O conector do OneDrive não entrega vídeo binário grande; por isso o dossiê (arquivos pequenos) existe.
 - `scenedetect[opencv]` avisa que o extra não existe na 0.7.x; é inofensivo (o OpenCV vem instalado).
+- OpenCV 5 (o que o pip instala hoje) NÃO tem mais `CascadeClassifier`/Haar: rosto usa `cv2.FaceDetectorYN` (YuNet, baixado do Hugging Face).
+- `raw.githubusercontent.com/opencv/opencv_zoo/...*.onnx` devolve um ponteiro Git LFS (131 bytes), não o modelo: use o Hugging Face.
 
 ## Limitações conhecidas (candidatas a melhorias)
 - A pontuação não enxerga abates/vitórias só visuais (Arc Raiders): usa áudio + movimento (+ `--ocr` para texto escrito).

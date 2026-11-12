@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="pt">
+<head>
+<meta charset="utf-8">
+<title>Título animado</title>
+<style>
+  html, body { margin: 0; height: 100%; background: transparent; overflow: hidden; }
+  body { display: flex; flex-direction: column; align-items: center; justify-content: center;
+         font-family: Impact, "Arial Black", "DejaVu Sans", sans-serif; text-transform: uppercase; }
+  #titulo { display: flex; flex-wrap: wrap; justify-content: center; gap: 0 .28em; max-width: 90vw;
+            font-size: 9vw; font-weight: 900; line-height: 1.05; color: #ffde1e; text-align: center;
+            -webkit-text-stroke: .35vw #000; paint-order: stroke fill; }
+  .p { display: inline-block; will-change: transform, opacity; }
+  #barra { width: 40vw; height: .9vw; background: #ffde1e; margin: 2.2vw 0 1.6vw; transform-origin: left; }
+  #sub { font-size: 3.4vw; color: #fff; -webkit-text-stroke: .15vw #000; paint-order: stroke fill; letter-spacing: .12em; }
+</style>
+<script src="https://cdn.jsdelivr.net/npm/gsap@3.12.5/dist/gsap.min.js"></script>
+</head>
+<body>
+<div id="titulo"></div>
+<div id="barra"></div>
+<div id="sub"></div>
+<script>
+  // Dados: { "titulo": "...", "subtitulo": "..." }  (window.DADOS vem do --dados)
+  const D = Object.assign({ titulo: "TÍTULO", subtitulo: "" }, window.DADOS || {});
+  const tit = document.getElementById("titulo");
+  D.titulo.split(/\s+/).forEach(w => { const s = document.createElement("span"); s.className = "p"; s.textContent = w; tit.appendChild(s); });
+  document.getElementById("sub").textContent = D.subtitulo;
+  if (!D.subtitulo) document.getElementById("barra").style.display = "none";
+
+  const tl = gsap.timeline({ paused: true });
+  tl.from(".p", { y: "6vw", scale: 1.6, opacity: 0, rotate: -6, duration: .55, ease: "back.out(2)", stagger: .12 })
+    .from("#barra", { scaleX: 0, duration: .5, ease: "power3.out" }, "-=.25")
+    .from("#sub", { y: "2vw", opacity: 0, duration: .5, ease: "power2.out" }, "-=.2")
+    .to({}, { duration: 1.0 })                                   // segura na tela
+    .to(["#titulo", "#barra", "#sub"], { opacity: 0, y: "-3vw", duration: .45, ease: "power2.in", stagger: .05 });
+  window.DURACAO = tl.duration();
+  window.seek = t => { tl.time(t); };
+  window.seek(0);
+</script>
+</body>
+</html>

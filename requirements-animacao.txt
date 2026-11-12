@@ -1,0 +1,2 @@
+# Animacao HTML (scripts/animar_html.py): navegador sem janela. Depois: python -m playwright install chromium
+playwright

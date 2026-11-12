@@ -8,7 +8,8 @@ adiciona música, legenda automática (Whisper) e, se o vídeo for grande, intro
 ## Instalação
 1. Instale o FFmpeg e deixe no PATH (`ffmpeg -version` deve funcionar).
 2. `pip install -r requirements.txt`
-3. (opcional, para `--ocr`) `pip install -r requirements-ocr.txt`
+3. (opcional) `pip install -r requirements-ocr.txt` (`--ocr`), `requirements-visao.txt` (recorte de pessoa e rastreamento) e
+   `requirements-animacao.txt` + `python -m playwright install chromium` (animação HTML)
 
 Atalhos: `./scripts/setup_sessao.sh` (Linux/nuvem) ou `.\scripts\setup_windows.ps1` (Windows) instalam tudo de uma vez.
 
@@ -90,6 +91,24 @@ sempre no mesmo canto, `--ocr-region` deixa a leitura mais rápida e evita falso
 Custo: cerca de 0,2 s por quadro lido na CPU (medido em 1280x720). Com o padrão (1 quadro a cada 1,5 s), uma hora de
 gameplay leva alguns minutos a mais na pontuação. Limites: letras pequenas, fundo muito poluído ou fontes
 estilizadas podem não ser lidas; `--ocr-region` com a área do aviso e `--ocr-every` menor ajudam.
+
+## Animação em HTML (`scripts/animar_html.py`: GSAP, Three.js, canvas)
+Renderiza uma página HTML/CSS/JS quadro a quadro num Chromium sem janela (Playwright) e grava vídeo com FFmpeg, com fundo
+transparente se quiser. É a mesma ideia do Remotion/HyperFrames, sem Node e sem licença de empresa (o Remotion é grátis só
+para pessoas, ONGs e empresas com até 3 funcionários; acima disso é pago). Precisa de `pip install -r requirements-animacao.txt`
+e `python -m playwright install chromium` (os scripts de setup fazem isso).
+```bash
+python scripts/animar_html.py titulo --dados '{"titulo":"CLUTCH INSANO","subtitulo":"@meucanal"}' -o titulo.mov   # transparente
+python scripts/animar_html.py titulo --dados '{"titulo":"RANKED"}' --fundo "#0b1020" -o intro.mp4               # opaco
+python autoedit.py gameplay.mp4 --extras on --intro-video intro.mp4                                             # usa como intro
+python scripts/animar_html.py terco_inferior --dados '{"nome":"Danyllo","cargo":"Gameplay"}' --sobre video.mp4 --em 3 -o com_nome.mp4
+```
+Modelos prontos em `scripts/animacoes/` (`titulo`, `terco_inferior`). Para criar o seu: um `.html` que lê `window.DADOS`, define
+`window.seek(t)` (com GSAP: `tl.pause(); window.seek = t => tl.time(t)`) e, se quiser, `window.DURACAO`. Qualquer biblioteca
+serve (Three.js, canvas...), desde que o quadro dependa só de `t`. O GSAP é baixado uma vez para `~/.cache/autoedit`.
+Opções: `--duracao S`, `--fps N` (30), `--res LxA` (1920x1080; Shorts 1080x1920), `--fundo #RRGGBB`, `--sobre VIDEO --em S` (renderiza no
+tamanho do vídeo), saída `.mov`/`.webm` (transparentes) ou `.mp4`. Custo: ~7 s para 2,8 s de animação 1080p. Fonte padrão é
+Impact/Arial Black (no Linux cai para DejaVu).
 
 ## Recorte de pessoa e rastreamento (`scripts/pessoa_fundo.py`, `scripts/rastrear.py`)
 Ferramentas separadas (não passam por `autoedit.py`); rodam na CPU e baixam os modelos sozinhas na 1ª vez para `~/.cache/autoedit`.
@@ -211,7 +230,7 @@ Fonte: vídeo "Claude cria e edita vídeo com um único prompt" (analisado com a
 | OCR (ler texto na tela e dar nota ao trecho) | tem: `--ocr` (RapidOCR), mas só para texto escrito; kills do Arc Raiders são só visuais, então não servem |
 | Legenda palavra a palavra | tem: `--sub-mode group/word` (testado com fala sintética em inglês; não testado em pt) |
 | Cortes em cima de palavras | falta |
-| Animação por código (Remotion, HyperFrames, GSAP, Three.js: navegador sem janela + FFmpEG) | falta; stack JS/Chromium |
+| Animação por código (Remotion, HyperFrames, GSAP, Three.js: navegador sem janela + FFmpeg) | tem: `scripts/animar_html.py` (GSAP em 2 modelos prontos; Three.js não testado; no Windows não testado) |
 | Vídeos de apoio (Pexels API) + acerto de cor | tem: `--broll` (testado só contra um servidor de mentira local; falta rodar com a sua chave real) |
 | Voz (ElevenLabs), avatar (HeyGen), efeitos sonoros e trilha por texto | falta; serviços pagos com conta/chave |
 Chaves e contas nunca entram no repositório.

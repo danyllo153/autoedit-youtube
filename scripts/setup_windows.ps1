@@ -20,7 +20,8 @@ if (-not (Tem "py")) {
     exit 1
 }
 py -m pip install --upgrade pip
-py -m pip install -r requirements.txt -r requirements-ocr.txt -r requirements-visao.txt
+py -m pip install -r requirements.txt -r requirements-ocr.txt -r requirements-visao.txt -r requirements-animacao.txt
+py -m playwright install chromium   # navegador da animacao HTML (scripts\animar_html.py), ~150 MB
 
 Write-Host "`nPronto. Se acabou de instalar algo, FECHE e abra o PowerShell (o PATH so atualiza em janela nova)." -ForegroundColor Green
 Write-Host "Vigia da fila de videos:  py scripts\watch_fila.py"

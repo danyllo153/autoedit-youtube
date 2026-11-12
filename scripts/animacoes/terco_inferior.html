@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="pt">
+<head>
+<meta charset="utf-8">
+<title>Terço inferior (nome e cargo)</title>
+<style>
+  html, body { margin: 0; height: 100%; background: transparent; overflow: hidden; }
+  #caixa { position: absolute; left: 5vw; bottom: 9vh; display: flex; align-items: stretch; font-family: "Arial Black", Arial, "DejaVu Sans", sans-serif; }
+  #faixa { width: 1vw; background: var(--cor, #ffde1e); transform-origin: top; }
+  #texto { background: rgba(10, 14, 28, .88); padding: 1.1vw 2.4vw 1.1vw 1.6vw; color: #fff; overflow: hidden; }
+  #nome { font-size: 3.2vw; font-weight: 900; letter-spacing: .02em; text-transform: uppercase; white-space: nowrap; }
+  #cargo { font-size: 1.9vw; color: var(--cor, #ffde1e); white-space: nowrap; margin-top: .2vw; }
+</style>
+<script src="https://cdn.jsdelivr.net/npm/gsap@3.12.5/dist/gsap.min.js"></script>
+</head>
+<body>
+<div id="caixa"><div id="faixa"></div><div id="texto"><div id="nome"></div><div id="cargo"></div></div></div>
+<script>
+  // Dados: { "nome": "...", "cargo": "...", "cor": "#ffde1e", "segura": 3 }
+  const D = Object.assign({ nome: "NOME", cargo: "", cor: "#ffde1e", segura: 3 }, window.DADOS || {});
+  document.getElementById("nome").textContent = D.nome;
+  document.getElementById("cargo").textContent = D.cargo;
+  document.documentElement.style.setProperty("--cor", D.cor);
+  const tl = gsap.timeline({ paused: true });
+  tl.from("#faixa", { scaleY: 0, duration: .35, ease: "power3.out" })
+    .from("#texto", { clipPath: "inset(0 100% 0 0)", x: "-2vw", duration: .55, ease: "power3.out" }, "-=.1")
+    .from("#cargo", { y: "1.2vw", opacity: 0, duration: .4, ease: "power2.out" }, "-=.25")
+    .to({}, { duration: D.segura })
+    .to("#texto", { clipPath: "inset(0 100% 0 0)", duration: .45, ease: "power3.in" })
+    .to("#faixa", { scaleY: 0, duration: .3, ease: "power2.in" }, "-=.1");
+  window.DURACAO = tl.duration();
+  window.seek = t => { tl.time(t); };
+  window.seek(0);
+</script>
+</body>
+</html>

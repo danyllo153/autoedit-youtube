@@ -16,7 +16,12 @@ fi
 
 # 2) dependências Python do projeto (requirements.txt é a fonte da verdade)
 echo "[setup] instalando dependências Python..."
-python3 -m pip install -q --disable-pip-version-check -r requirements.txt -r requirements-ocr.txt -r requirements-visao.txt
+python3 -m pip install -q --disable-pip-version-check -r requirements.txt -r requirements-ocr.txt -r requirements-visao.txt -r requirements-animacao.txt
+
+# 2b) Chromium para scripts/animar_html.py (a nuvem já traz um em /opt/pw-browsers; o script o usa se precisar)
+if [ ! -e /opt/pw-browsers/chromium ]; then
+  python3 -m playwright install chromium || echo "[setup] aviso: Chromium nao instalado (animar_html.py nao vai rodar)"
+fi
 
 # 3) yt-dlp: só para baixar links. Na nuvem o YouTube bloqueia o download (anti-robô);
 #    o download real roda no PC do usuário (scripts/baixar_video.ps1 / scripts/watch_fila.py).
@@ -27,7 +32,7 @@ echo "[setup] versões:"
 ffmpeg -version | head -1
 python3 - <<'EOF'
 import importlib
-for mod in ("scenedetect", "faster_whisper", "av", "PIL", "numpy", "cv2", "yt_dlp", "rapidocr_onnxruntime"):
+for mod in ("scenedetect", "faster_whisper", "av", "PIL", "numpy", "cv2", "yt_dlp", "rapidocr_onnxruntime", "onnxruntime", "playwright"):
     try:
         m = importlib.import_module(mod)
         print(f"  ok  {mod} {getattr(m, '__version__', '')}")

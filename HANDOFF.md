@@ -1,6 +1,6 @@
 # HANDOFF - estado do projeto autoedit-youtube
 
-Atualizado em 11/11/2026 (fim da sessão da nuvem). Branch: `claude/gifted-ptolemy-utozea` (PR para `main`).
+Atualizado em 12/11/2026 (fim da 2ª sessão da nuvem). Branch: `claude/gifted-ptolemy-utozea` (PR para `main`).
 Leia também: `CLAUDE.md` (regras do projeto, lido sozinho pelas sessões) e `README.md` (uso e tabela de opções).
 
 ## 1. Para retomar em uma sessão nova (copiar e colar)
@@ -24,6 +24,16 @@ scripts de setup.
 | Slideshow com easing e transições | `--photo-transition`, `--transition-secs` | zoom suave por padrão; xfade entre fotos |
 | OCR de texto na tela | `--ocr`, `--ocr-keywords`, `--ocr-weight`, `--ocr-every`, `--ocr-region` | nota extra por palavras escritas; grava `*_ocr.json` |
 | Whisper | (correção) | cai para CPU se faltar `cublas64_12.dll` |
+
+**Itens do mapa implementados na 2ª sessão** (detalhes no README):
+| Recurso | Como | Testado com |
+|---|---|---|
+| Legenda palavra a palavra | `--sub-mode group/word`, `--sub-words`, `--sub-color` (ASS) | fala sintética (espeak-ng) em inglês, Whisper `tiny`; NÃO em pt |
+| Rosto no Short | `--short-crop face/facecam` (YuNet; modelo baixa sozinho) | foto de rosto em vídeo sintético; sem rosto cai no enquadramento normal; NÃO com webcam real |
+| Pexels | `--broll`, `--pexels-key`/`PEXELS_API_KEY`, `--broll-color` | servidor de mentira local (a API real só respondeu 401 sem chave); NÃO com chave real |
+| Pessoa/fundo e rastreio | `scripts/pessoa_fundo.py`, `scripts/rastrear.py` | foto de rosto em vídeo (recorte `humano` bom, `leve` grosseiro); rastreio erro médio ~19 px |
+| Animação HTML | `scripts/animar_html.py` + `scripts/animacoes/*.html` (GSAP) | Chromium da nuvem; NÃO no Windows |
+Ainda pagos/sem implementar: voz (ElevenLabs), avatar (HeyGen), efeitos sonoros/trilha por texto. Cortes em cima de palavras: não feito.
 
 **`scripts/`**
 - `qa_video.py` - revisão do vídeo FINAL: LUFS/pico, silêncios, telas pretas, quadros + folhas, fala x `--roteiro`.
@@ -68,14 +78,15 @@ vigia da fila e dossiê rodando de verdade no PC do usuário.
    dependência nova). Precisa de 1-2 capturas do momento do abate e de dizer onde na tela aparece (podem ir na pasta
    `Autoedit` do OneDrive; imagens o Claude consegue abrir).
 2. Palavras padrão do `--ocr` (`victory`, `extracted`...) são palpites, não conferidos com o jogo.
-3. Próximas técnicas do mapa, em ordem de custo/benefício: legenda palavra a palavra (Whisper `word_timestamps`),
-   detecção de rosto para o Short, Pexels (precisa de chave).
+3. Testar com material real: legenda em pt, rosto de webcam, Pexels com chave, recorte/rastreio com gravação sua, `setup_windows.ps1`
+   (agora instala também `requirements-visao.txt`, `requirements-animacao.txt` e o Chromium do Playwright).
 4. Rodar `autoedit.py` e `qa_video.py` num trecho de gameplay real e ajustar `--audio-weight`, `--min-motion` e `--ocr-*`.
 
 ## 7. Armadilhas (resumo; lista completa no `CLAUDE.md`)
 - `av` 17+ quebra o `faster-whisper`: manter `av<17`.
 - Windows: `python` pode ser o atalho da Store (use `py`); `winget` só atualiza o PATH em janela nova do PowerShell.
 - OCR: recortes finos da tela precisam de preenchimento (já feito); `--ocr-every` menor acha textos curtos, mas demora mais.
+- OpenCV 5 não tem Haar (`CascadeClassifier`): rosto usa YuNet via `cv2.FaceDetectorYN`; modelos vêm do Hugging Face (o raw do GitHub do opencv_zoo é ponteiro LFS).
 - Nunca commitar vídeos, `test_footage/`, `autoedit_out/`, `dossie_*/` nem chaves/tokens.
 
 ## 8. Ambiente e pessoas
