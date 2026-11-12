@@ -185,6 +185,67 @@ def select_clips(items, target, aw, min_motion=0.5):
     return chosen, total
 
 
+# ------------------------------------------------- gravação falada: cortar silêncios + EDL
+def detect_speech(path, dur, db, min_silence, pad, min_speech=0.4):
+    """Trechos COM som/fala: o que sobra entre os silêncios achados pelo silencedetect do ffmpeg."""
+    r = subprocess.run(["ffmpeg", "-hide_banner", "-nostats", "-i", str(path), "-vn", "-af",
+                        f"silencedetect=noise={db:g}dB:d={min_silence:g}", "-f", "null", "-"],
+                       capture_output=True, text=True, encoding="utf-8", errors="replace")
+    starts = [float(x) for x in re.findall(r"silence_start:\s*(-?[\d.]+)", r.stderr)]
+    ends = [float(x) for x in re.findall(r"silence_end:\s*(-?[\d.]+)", r.stderr)]
+    silences = [(max(st, 0.0), ends[i] if i < len(ends) else dur) for i, st in enumerate(starts)]
+    speech, cur = [], 0.0
+    for st, en in silences:
+        if st - cur > 0:
+            speech.append((cur, st))
+        cur = en
+    if dur - cur > 0:
+        speech.append((cur, dur))
+    merged = []
+    for s_, e_ in speech:  # folga em volta da fala (não corta a respiração/consoante) e junta vizinhos
+        s_, e_ = max(0.0, s_ - pad), min(dur, e_ + pad)
+        if merged and s_ <= merged[-1][1]:
+            merged[-1] = (merged[-1][0], max(merged[-1][1], e_))
+        else:
+            merged.append((s_, e_))
+    return [(a, b) for a, b in merged if b - a >= min_speech]
+
+
+def speech_items(videos, args):
+    items, total = [], 0.0
+    for order, v in enumerate(videos):
+        dur, has_audio = probe(v)
+        total += dur
+        if has_audio:
+            segs = detect_speech(v, dur, args.silence_db, args.min_silence, args.pad)
+        else:
+            print(f"  ! {Path(v).name} sem áudio: mantido inteiro")
+            segs = [(0.0, dur)]
+        print(f"• {Path(v).name}: {len(segs)} trechos com fala")
+        items += [{"src": str(v), "order": order, "s": s, "e": e, "a": 0.0, "m": 0.0,
+                   "has_audio": has_audio, "score": 1.0} for s, e in segs]
+    return items, total
+
+
+def timecode(sec, fps=FPS):
+    f = int(round(sec * fps))
+    return f"{f // (fps * 3600):02}:{f // (fps * 60) % 60:02}:{f // fps % 60:02}:{f % fps:02}"
+
+
+def write_edl(clips, path, title):
+    """EDL CMX 3600 (aproximada: timecodes a 30 fps, sem timecode de origem) para abrir no Resolve/Premiere."""
+    lines = [f"TITLE: {title}", "FCM: NON-DROP FRAME", ""]
+    rec = 0.0
+    for i, c in enumerate(clips, 1):
+        d = c["e"] - c["s"]
+        reel = f"SRC{c['order'] + 1}"
+        lines.append(f"{i:03d}  {reel:<8} AA/V  C        {timecode(c['s'])} {timecode(c['e'])} "
+                     f"{timecode(rec)} {timecode(rec + d)}")
+        lines.append(f"* FROM CLIP NAME: {Path(c['src']).name}")
+        rec += d
+    Path(path).write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
 # ----------------------------------------------------------------- renderização
 def render_clip(src, s, e, out, has_audio, enc, w, h, cwd, square=False):
     d = e - s
@@ -493,6 +554,13 @@ def main():
     ap.add_argument("--min-motion", type=float, default=0.5,
                     help="descarta trechos com movimento < X * mediana (menus/inventário). 0 desliga")
     ap.add_argument("--shorts-only", action="store_true", help="gera só o Short vertical")
+    ap.add_argument("--cut-silences", action="store_true",
+                    help="gravação falada: corta os silêncios (mantém tudo que tem som) e salva a EDL. "
+                         "Ignora --target e a pontuação por cenas")
+    ap.add_argument("--silence-db", type=float, default=-35.0,
+                    help="abaixo de X dB conta como silêncio (padrão -35; ruído de fundo alto: use -30)")
+    ap.add_argument("--min-silence", type=float, default=0.6, help="só corta silêncios >= X s (padrão 0,6)")
+    ap.add_argument("--pad", type=float, default=0.15, help="folga mantida em volta da fala, em s (padrão 0,15)")
     ap.add_argument("--photo-secs", type=float, default=3.5)
     ap.add_argument("--photo-transition", choices=["none", "mix"] + XFADES, default="none",
                     help="slideshow: transição entre fotos (none = corte seco; mix = alterna)")
@@ -545,17 +613,27 @@ def main():
             print(f"• slideshow com {len(clips)} fotos")
         else:
             items, total_dur = [], 0.0
-            for order, v in enumerate(videos):
-                dur, has_audio, chunks, a_sc, m_sc = score_video(v, args)
-                total_dur += dur
-                items += [{"src": str(v), "order": order, "s": s, "e": e, "a": a, "m": m,
-                           "has_audio": has_audio}
-                          for (s, e), a, m in zip(chunks, a_sc, m_sc)]
+            if args.cut_silences:
+                items, total_dur = speech_items(videos, args)
+            else:
+                for order, v in enumerate(videos):
+                    dur, has_audio, chunks, a_sc, m_sc = score_video(v, args)
+                    total_dur += dur
+                    items += [{"src": str(v), "order": order, "s": s, "e": e, "a": a, "m": m,
+                               "has_audio": has_audio}
+                              for (s, e), a, m in zip(chunks, a_sc, m_sc)]
             if not items:
-                sys.exit("Nenhum trecho encontrado (vídeo muito curto?).")
-            target = args.target or min(max(total_dur * 0.25, 30), 600)
-            clips, got = select_clips(items, target, args.audio_weight, args.min_motion)
-            print(f"→ {len(clips)} trechos escolhidos, {got:.0f}s (alvo {target:.0f}s)")
+                sys.exit("Nenhum trecho encontrado (vídeo muito curto, ou só silêncio?).")
+            if args.cut_silences:
+                clips = items
+                got = sum(c["e"] - c["s"] for c in clips)
+                print(f"→ {len(clips)} trechos, {got:.0f}s de {total_dur:.0f}s "
+                      f"(cortou {total_dur - got:.0f}s de silêncio)")
+                write_edl(clips, out_dir / f"{stem}.edl", title)
+            else:
+                target = args.target or min(max(total_dur * 0.25, 30), 600)
+                clips, got = select_clips(items, target, args.audio_weight, args.min_motion)
+                print(f"→ {len(clips)} trechos escolhidos, {got:.0f}s (alvo {target:.0f}s)")
             plan = [{"src": Path(c["src"]).name, "start": round(c["s"], 2),
                      "end": round(c["e"], 2), "score": round(c["score"], 3)} for c in clips]
             (out_dir / f"{stem}_trechos.json").write_text(json.dumps(plan, indent=2))
@@ -576,7 +654,16 @@ def main():
 
         if (args.shorts or args.shorts_only) and not args.photos_mode:
             print("• montando Shorts vertical...")
-            sh, _ = select_clips(items, 55, args.audio_weight, args.min_motion)
+            if args.cut_silences:  # primeiros 55 s de fala
+                sh, acc = [], 0.0
+                for c in clips:
+                    d = c["e"] - c["s"]
+                    sh.append(c if acc + d <= 55 else {**c, "e": c["s"] + (55 - acc)})
+                    acc += d
+                    if acc >= 55:
+                        break
+            else:
+                sh, _ = select_clips(items, 55, args.audio_weight, args.min_motion)
             produce(sh, out_dir / f"{stem}_shorts.mp4", tmp, args, 1080, 1920,
                     vertical=True, allow_extras=False, title=title)
         print(f"\n✔ pronto! Arquivos em: {out_dir.resolve()}")
