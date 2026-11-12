@@ -6,6 +6,8 @@ vídeo, música com ducking, legendas com Whisper; vídeo grande (>= 180 s) ganh
 gera 9:16; pasta de fotos vira slideshow. Arquivos: `autoedit.py` (tudo), `requirements.txt`, `README.md`,
 `scripts/`, `examples/`, `.claude/skills/watch/`.
 
+> Estado atual, pendências e o que foi testado: leia o `HANDOFF.md`.
+
 ## Começar uma sessão
 ```bash
 ./scripts/setup_sessao.sh        # Linux/nuvem: ffmpeg + pip install -r requirements.txt + yt-dlp (idempotente)
