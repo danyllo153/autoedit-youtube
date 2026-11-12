@@ -9,6 +9,8 @@ adiciona música, legenda automática (Whisper) e, se o vídeo for grande, intro
 1. Instale o FFmpeg e deixe no PATH (`ffmpeg -version` deve funcionar).
 2. `pip install -r requirements.txt`
 
+Atalhos: `./scripts/setup_sessao.sh` (Linux/nuvem) ou `.\scripts\setup_windows.ps1` (Windows) instalam tudo de uma vez.
+
 ## Uso
 ```bash
 # Melhores momentos (duração automática = 25% do original, entre 30 s e 10 min)
